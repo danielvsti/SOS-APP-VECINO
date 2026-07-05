@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Capacitor generated web copy
+www/
+
+# iOS build/user files
+ios/App/build/
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+
+# Android build files
+android/.gradle/
+android/app/build/
+android/build/
+android/.idea/
+android/local.properties
+
+# Backups / temporary
+*.bak_*
+*.zip
+.DS_Store
+
+# Secrets / env
+.env
+.env.*
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+*.key

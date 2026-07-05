@@ -1,0 +1,12 @@
+{
+  "appId": "cl.vsti.sosvecino",
+  "appName": "SOS Municipal",
+  "webDir": "www",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "backgroundColor": "#07111f",
+      "showSpinner": false
+    }
+  }
+}

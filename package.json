@@ -1,0 +1,18 @@
+{
+  "name": "sos-app-vecino",
+  "version": "0.26.0",
+  "private": true,
+  "description": "App móvil vecino del Sistema SOS Municipal VS&TI",
+  "scripts": {
+    "sync": "npx cap sync",
+    "ios": "npx cap open ios",
+    "android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/cli": "latest",
+    "@capacitor/core": "latest",
+    "@capacitor/ios": "latest",
+    "@capacitor/motion": "latest"
+  }
+}

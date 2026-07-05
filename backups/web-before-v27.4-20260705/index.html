@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <title>Alerta Comunal</title>
+  <meta name="app-version" content="v26.3-alerta-comunal-webrtc-ready">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+  <meta name="theme-color" content="#dc2626">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Alerta Comunal">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+</head>
+<body>
+  <div id="recordingBanner" class="recording-banner" hidden>
+    <span class="rec-dot"></span>
+    <span>Grabando audio</span>
+    <span id="recordingTimer">00:00</span>
+  </div>
+
+  <div id="incomingCallPanel" class="incoming-call-panel" hidden>
+    <div class="incoming-card">
+      <div id="incomingCallIcon" class="incoming-icon">📞</div>
+      <h2 id="incomingCallTitle">La central quiere comunicarse</h2>
+      <p id="incomingCallText">Tienes una solicitud de comunicación desde la central.</p>
+      <div class="incoming-actions">
+        <button id="acceptCallButton" class="accept-call" type="button">Aceptar</button>
+        <button id="rejectCallButton" class="reject-call" type="button">Rechazar</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="container">
+    <header class="neighbor-app-header">
+      <div class="neighbor-brand">
+        <img src="logo.svg" class="logo" alt="Alerta Comunal por VS&TI">
+        <div>
+          <h1>Alerta Comunal</h1>
+          <p class="product-subtitle">Sistema SOS Municipal por VS&TI</p>
+        </div>
+      </div>
+      <button id="appSettingsButton" class="top-settings-button" type="button" aria-label="Abrir configuración">⚙️</button>
+    </header>
+
+    <div id="status" class="status-pill">Lista para usar</div>
+
+    <section id="authPanel" class="auth-panel" hidden>
+      <div class="auth-card">
+        <div id="loginBlock">
+          <h2>Ingresar al sistema</h2>
+          <p class="helper-text">
+            Ingresa con tu teléfono registrado. Te enviaremos un código de verificación.
+          </p>
+
+          <label>Teléfono registrado</label>
+          <input id="loginPhone" type="tel" autocomplete="tel" placeholder="+569XXXXXXXX">
+
+          <button id="requestCodeButton" class="primary-action" type="button">
+            Enviar código
+          </button>
+
+          <button id="showRegisterButton" class="secondary-action" type="button">
+            No estoy registrado / Registrarme
+          </button>
+        </div>
+
+        <div id="registerBlock" hidden>
+          <h2>Registro del vecino</h2>
+          <p class="helper-text">
+            Regístrate para que la central reciba tu nombre, teléfono, dirección y contactos de emergencia.
+          </p>
+
+          <label>Nombre completo *</label>
+          <input id="regFullName" type="text" autocomplete="name" placeholder="Nombre y apellido">
+
+          <label>Teléfono propio *</label>
+          <input id="regPhone" type="tel" autocomplete="tel" placeholder="+569XXXXXXXX">
+
+          <label>RUT</label>
+          <input id="regRut" type="text" placeholder="Opcional">
+
+          <label>Email</label>
+          <input id="regEmail" type="email" autocomplete="email" placeholder="Opcional">
+
+          <label>Dirección declarada *</label>
+          <input id="regAddress" type="text" autocomplete="street-address" placeholder="Calle, número, depto, sector">
+
+          <button id="homeLocationButton" class="secondary-action compact-dark" type="button">
+            📍 Usar GPS como domicilio
+          </button>
+
+          <div id="homeLocationStatus" class="small-muted">Domicilio GPS pendiente</div>
+
+          <div class="contact-subtitle">Contacto de emergencia 1</div>
+          <input id="contact1Name" type="text" placeholder="Nombre contacto">
+          <input id="contact1Phone" type="tel" placeholder="Teléfono contacto">
+          <input id="contact1Relation" type="text" placeholder="Relación: familiar, vecino, conserje...">
+
+          <div class="contact-subtitle">Contacto de emergencia 2</div>
+          <input id="contact2Name" type="text" placeholder="Nombre contacto">
+          <input id="contact2Phone" type="tel" placeholder="Teléfono contacto">
+          <input id="contact2Relation" type="text" placeholder="Relación">
+
+          <button id="registerButton" class="primary-action" type="button">
+            Registrar y enviar código
+          </button>
+
+          <button id="backToLoginButton" class="secondary-action" type="button">
+            Volver al ingreso
+          </button>
+        </div>
+
+        <div id="otpBlock" hidden>
+          <h2>Validar código</h2>
+          <p id="otpHelpText" class="helper-text">
+            Ingresa el código de 6 dígitos enviado a tu teléfono.
+          </p>
+
+          <label>Código de verificación</label>
+          <input id="otpCode" class="otp-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="000000">
+
+          <div id="otpDemoCode" class="otp-demo-code" hidden></div>
+
+          <button id="verifyCodeButton" class="primary-action" type="button">
+            Validar código
+          </button>
+
+          <button id="resendCodeButton" class="secondary-action" type="button">
+            Reenviar código
+          </button>
+
+          <button id="otpBackButton" class="neutral-action" type="button">
+            Cambiar teléfono
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="profilePanel" class="profile-panel" hidden>
+      <div class="profile-card">
+        <div>Vecino registrado</div>
+        <strong id="profileName">-</strong>
+        <span id="profileMeta">-</span>
+        <div class="profile-actions">
+          <button id="editProfileButton" type="button">Editar perfil</button>
+          <button id="logoutButton" type="button">Salir</button>
+          <button id="sensorSettingsButton" class="sensor-indicator" type="button" aria-label="Configurar seguridad automática">
+            <span class="sensor-dot" aria-hidden="true"></span>
+            <span id="sensorIndicatorText">Seguridad automática</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="sensorSettingsPanel" class="sensor-settings-panel" hidden>
+      <div class="sensor-settings-card">
+        <div class="sensor-settings-header">
+          <div>
+            <div class="eyebrow">Configuración</div>
+            <h2>Seguridad automática</h2>
+          </div>
+          <button id="closeSensorSettingsButton" class="icon-button" type="button" aria-label="Cerrar configuración">×</button>
+        </div>
+
+        <p class="sensor-settings-lead">
+          Activa funciones automáticas de apoyo. La alerta silenciosa VIF por agitación y la detección de caída funcionan mientras la app está abierta o activa.
+        </p>
+
+        <div class="sensor-actions">
+          <button id="sensorToggleButton" class="primary-action compact" type="button">
+            Activar seguridad automática
+          </button>
+          <button id="sensorTestButton" class="secondary-action compact" type="button">
+            Probar gesto VIF
+          </button>
+        </div>
+
+        <div id="sensorStatus" class="sensor-status">
+          Pendiente de activar. Puedes activar estas funciones desde esta configuración.
+        </div>
+
+        <div class="sensor-training-box">
+          <strong>Gesto discreto para VIF</strong>
+          <p>Con la app activa, toma el celular firme y haz tres sacudidas cortas con la muñeca: tac — tac — tac, dentro de unos 5 segundos.</p>
+        </div>
+
+        <p class="sensor-limit-note">
+          Importante: iOS no permite garantizar detección si la app está cerrada o el teléfono está bloqueado. Para protección permanente, usa botón físico SOS como respaldo.
+        </p>
+      </div>
+    </section>
+
+
+
+    <section id="appSettingsPanel" class="sensor-settings-panel" hidden>
+      <div class="sensor-settings-card app-settings-card">
+        <div class="sensor-settings-header">
+          <div>
+            <div class="eyebrow">Configuración</div>
+            <h2>Configuración del vecino</h2>
+          </div>
+          <button id="closeAppSettingsButton" class="icon-button" type="button" aria-label="Cerrar configuración">×</button>
+        </div>
+
+        <div class="settings-account-card">
+          <div class="eyebrow">Vecino registrado</div>
+          <strong id="settingsAccountName">—</strong>
+          <span id="settingsAccountMeta">—</span>
+          <div class="settings-account-actions">
+            <button id="editProfileFromSettingsButton" class="primary-action compact" type="button">Editar perfil</button>
+            <button id="logoutFromSettingsButton" class="secondary-action compact" type="button">Salir</button>
+          </div>
+        </div>
+
+        <div class="app-settings-grid">
+          <div class="app-settings-section">
+            <h3>Seguridad automática</h3>
+            <p>Configura alerta silenciosa VIF por agitación y detección de caída.</p>
+            <button id="openSensorSettingsFromAppButton" class="secondary-action compact" type="button">Abrir seguridad automática</button>
+          </div>
+
+          <div class="app-settings-section">
+            <h3>Notificaciones</h3>
+            <label class="setting-row"><input id="neighborNotifySound" type="checkbox"> Sonido en cambios del caso</label>
+            <label class="setting-row"><input id="neighborNotifyVibrate" type="checkbox"> Vibración en cambios del caso</label>
+          </div>
+
+          <div class="app-settings-section">
+            <h3>Permisos</h3>
+            <p>Ubicación, cámara y micrófono se solicitan cuando son necesarios para una emergencia.</p>
+            <button id="neighborCheckPermissionsButton" class="secondary-action compact" type="button">Revisar permisos</button>
+          </div>
+
+          <div class="app-settings-section">
+            <h3>Privacidad</h3>
+            <p>Durante una alerta se envía ubicación, tipo de emergencia y evidencia que decidas aportar.</p>
+            <label class="setting-row"><input id="neighborPrivacyAck" type="checkbox"> Entiendo qué datos se envían</label>
+          </div>
+
+          <div class="app-settings-section">
+            <h3>Cuenta</h3>
+            <p><strong>Vecino:</strong> <span id="settingsNeighborName">—</span></p>
+            <p><strong>Teléfono:</strong> <span id="settingsNeighborPhone">—</span></p>
+            <p><strong>Centro:</strong> <span id="settingsNeighborCenter">—</span></p>
+          </div>
+
+          <div class="app-settings-section">
+            <h3>Ayuda</h3>
+            <p>Usa SOS solo ante emergencias reales. Si fue falsa alarma, cancela desde el seguimiento del caso.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="homePanel" class="home-panel">
+      <button id="sosButton" type="button" aria-label="Activar SOS">
+        SOS
+      </button>
+      <p class="helper-text">
+        Presiona el botón en caso de emergencia.
+      </p>
+
+      <div id="fallConfirmPanel" class="fall-confirm-card" hidden>
+        <div class="fall-icon">⚠️</div>
+        <div class="fall-content">
+          <strong>Posible caída detectada</strong>
+          <p>Si estás bien, cancela. Si no respondes, enviaremos una alerta médica/accidente.</p>
+          <div id="fallCountdown" class="fall-countdown">Enviando en 25 s</div>
+          <div class="fall-actions">
+            <button id="fallOkButton" class="secondary-action compact" type="button">Estoy bien</button>
+            <button id="fallHelpButton" class="primary-action compact" type="button">Necesito ayuda</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="resumeFollowupCard" class="resume-followup-card" hidden>
+        <div class="resume-followup-icon">🟡</div>
+        <div class="resume-followup-content">
+          <strong>Caso activo en seguimiento</strong>
+          <p>
+            Folio <span id="resumeTicketId">-</span><br>
+            <span id="resumeCaseStatus">La central mantiene el caso activo.</span>
+          </p>
+          <button id="resumeFollowupButton" class="secondary-action compact" type="button">
+            Ver estado del caso
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="categoryPanel" class="category-panel" hidden>
+      <h2>¿Qué tipo de emergencia quieres reportar?</h2>
+      <p class="helper-text">
+        Toca una categoría para enviar la alerta de inmediato.
+      </p>
+
+      <div class="emergency-grid">
+        <button class="emergency-option" type="button" data-type="SOS_MANUAL">
+          <span class="emoji">🚨</span>
+          <span>SOS General</span>
+        </button>
+
+        <button class="emergency-option" type="button" data-type="MEDICAL">
+          <span class="emoji">🚑</span>
+          <span>Médica</span>
+        </button>
+
+        <button class="emergency-option" type="button" data-type="FIRE">
+          <span class="emoji">🔥</span>
+          <span>Incendio</span>
+        </button>
+
+        <button class="emergency-option" type="button" data-type="SECURITY">
+          <span class="emoji">👮</span>
+          <span>Seguridad</span>
+        </button>
+
+        <button class="emergency-option" type="button" data-type="VIF">
+          <span class="emoji">🏠</span>
+          <span>VIF</span>
+        </button>
+
+        <button class="emergency-option" type="button" data-type="TRAFFIC_ACCIDENT">
+          <span class="emoji">🚗</span>
+          <span>Accidente</span>
+        </button>
+
+        <button class="emergency-option" type="button" data-type="URBAN_RISK">
+          <span class="emoji">⚠️</span>
+          <span>Riesgo</span>
+        </button>
+
+        <button class="emergency-option" type="button" data-type="OTHER">
+          <span class="emoji">📝</span>
+          <span>Otro</span>
+        </button>
+      </div>
+
+      <button id="confirmButton" class="primary-action category-confirm-button" type="button" hidden>
+        Enviar alerta
+      </button>
+
+      <button id="backButton" class="secondary-action" type="button">
+        Volver
+      </button>
+    </section>
+
+    <section id="activePanel" class="active-panel" hidden>
+      <h2>Alerta enviada</h2>
+      <p class="helper-text">
+        La central ya recibió tu emergencia. Puedes enviar texto, audio o evidencia en video.
+      </p>
+
+      <div class="case-card">
+        <div>Folio del caso</div>
+        <strong id="ticketIdShort">-</strong>
+      </div>
+
+      <div id="caseTypeCard" class="case-type-card">
+        <span id="caseTypeIcon">🆘</span>
+        <div>
+          <div>Tipo de emergencia</div>
+          <strong id="caseTypeTitle">SOS General</strong>
+        </div>
+      </div>
+
+      <div id="caseProgressCard" class="case-progress-card">
+        <div class="case-progress-head">
+          <span id="caseProgressIcon">✅</span>
+          <div>
+            <strong id="caseProgressTitle">Central informada</strong>
+            <p id="caseProgressDetail">La central ya recibió tu emergencia.</p>
+          </div>
+        </div>
+        <div id="resolverContactCard" class="resolver-contact-card" hidden>
+          <span>👮</span>
+          <div>
+            <strong id="resolverContactName">Resolutor municipal</strong>
+            <p id="resolverContactText">Asignado a tu caso.</p>
+            <button id="resolverSecureCallButton" class="resolver-call-button" type="button" disabled hidden>
+              Solicitar llamada segura
+            </button>
+          </div>
+        </div>
+        <div id="caseProgressSteps" class="case-progress-steps"></div>
+      </div>
+
+      <div id="caseActivityCard" class="case-activity-card">
+        <div class="case-activity-head">
+          <div>
+            <strong>Bitácora enviada</strong>
+            <p>Registro visible de texto, audio y video que ya informaste a la central.</p>
+          </div>
+        </div>
+        <div id="caseActivityList" class="case-activity-list"></div>
+        <p id="caseActivityEmpty" class="case-activity-empty">Aún no has enviado información adicional para este caso.</p>
+      </div>
+
+      <div class="communication-grid">
+        <button id="textButton" class="comm-button" type="button">
+          💬<span>Mensaje</span>
+        </button>
+
+        <button id="audioButton" class="comm-button" type="button">
+          🎙️<span>Audio</span>
+        </button>
+
+        <button id="voiceButton" class="comm-button" type="button">
+          📞<span>Llamar central</span>
+        </button>
+
+        <button id="videoUploadButton" class="comm-button" type="button">
+          📹<span>Grabar video</span>
+        </button>
+      </div>
+
+      <div id="voiceSessionPanel" class="voice-session-panel" hidden>
+        <div class="voice-session-head">
+          <div>
+            <strong>📞 Llamada segura</strong>
+            <p id="voiceSessionStatus">Llamada segura lista.</p>
+          </div>
+        </div>
+        <div class="voice-session-actions">
+          <button id="voiceConnectButton" class="primary-action compact" type="button">Entrar a llamada</button>
+          <button id="voiceHangupButton" class="secondary-action compact" type="button" disabled>Colgar</button>
+        </div>
+        <audio id="voiceRemoteAudio" autoplay playsinline></audio>
+      </div>
+
+      <div class="followup-card">
+        <strong>¿Ya informaste lo necesario?</strong>
+        <p>Puede volver al inicio sin cancelar la emergencia. La central y el resolutor seguirán gestionando el caso.</p>
+        <button id="leaveFollowupButton" class="neutral-action" type="button">
+          Volver al inicio sin cancelar
+        </button>
+      </div>
+
+      <div id="textPanel" class="message-modal" hidden role="dialog" aria-modal="true" aria-labelledby="textPanelTitle">
+        <div class="message-modal-card">
+          <div class="message-modal-head">
+            <div>
+              <strong id="textPanelTitle">Enviar mensaje a la central</strong>
+              <p>Escribe información breve y clara sobre lo que está ocurriendo.</p>
+            </div>
+            <button id="closeTextPanelButton" class="message-modal-close" type="button" aria-label="Cerrar mensaje">×</button>
+          </div>
+          <textarea id="textMessage" rows="4" placeholder="Escribe un mensaje breve para la central..."></textarea>
+          <div class="message-modal-actions">
+            <button id="sendTextButton" class="primary-action compact" type="button">
+          Enviar mensaje
+        </button>
+            <button id="cancelTextPanelButton" class="secondary-action compact" type="button">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="audioPanel" class="message-box recording-box" hidden>
+        <div class="recording-inline">
+          <span class="recording-inline-dot"></span>
+          <strong>Grabando audio</strong>
+          <span id="audioInlineTimer">00:00</span>
+        </div>
+        <p id="audioStatus">Mantén el teléfono cerca y describe qué está ocurriendo.</p>
+        <button id="stopAudioButton" class="audio-stop-button" type="button">
+          ⏹ Detener y enviar audio
+        </button>
+      </div>
+
+      <input id="videoInput" type="file" accept="video/*" capture="environment" hidden>
+    </section>
+
+    <button id="cancelButton" class="danger-secondary" type="button" hidden>
+      Cancelar / falsa alarma
+    </button>
+
+    <section class="info qa-hidden-technical-info" aria-label="Información de alerta">
+      <div>GPS: <span id="gpsStatus">pendiente</span></div>
+      <div>Precisión: <span id="accuracy">-</span></div>
+      <div>Estado: <span id="eventStatus">NORMAL</span></div>
+      <div>Ticket: <span id="ticketId">-</span></div>
+      <div>Evento: <span id="eventId">-</span></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
