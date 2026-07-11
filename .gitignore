@@ -1,8 +1,19 @@
 # Dependencies
 node_modules/
 
-# Capacitor generated web copy
-www/
+# Bundle web activo de Capacitor. Se versiona para que un clone limpio pueda compilar.
+www/*
+!www/app.js
+!www/index.html
+!www/styles.css
+!www/manifest.json
+!www/service-worker.js
+!www/logo.png
+!www/logo.svg
+!www/icons/
+!www/icons/*.png
+!www/vendor/
+!www/vendor/jssip.min.js
 
 # iOS build/user files
 ios/App/build/

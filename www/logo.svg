@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Alerta Comunal">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#g)"/>
+  <circle cx="256" cy="208" r="104" fill="#dc2626"/>
+  <text x="256" y="230" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="86" font-weight="900" fill="#fff">SOS</text>
+  <path d="M256 338c-66-28-116-71-116-139v-48l116-48 116 48v48c0 68-50 111-116 139z" fill="none" stroke="#93c5fd" stroke-width="18" opacity="0.9"/>
+  <text x="256" y="386" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="900" fill="#fff">Alerta</text>
+  <text x="256" y="426" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#c7d2fe">Comunal</text>
+</svg>
