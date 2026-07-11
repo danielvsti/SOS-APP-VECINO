@@ -204,6 +204,19 @@ button:disabled {
   text-decoration: none;
 }
 
+.case-activity-media {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 10px;
+}
+
+.case-activity-video {
+  max-height: 260px;
+  border-radius: 14px;
+  background: #0f172a;
+}
+
 .communication-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

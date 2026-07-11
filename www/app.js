@@ -1,6 +1,7 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
 const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
 const NEIGHBOR_TOKEN_KEY = "sos_neighbor_session_token";
+const NEIGHBOR_SETTINGS_KEY = "sos_neighbor_platform_settings";
 const nativeFetch = window.fetch.bind(window);
 window.fetch = (input, options = {}) => {
   const url = typeof input === "string" ? input : input?.url || "";
@@ -28,6 +29,7 @@ if (neighborProfile && !localStorage.getItem(NEIGHBOR_TOKEN_KEY)) {
 let homeLatitude = localStorage.getItem("neighbor_home_latitude") || null;
 let homeLongitude = localStorage.getItem("neighbor_home_longitude") || null;
 let homeAccuracy = localStorage.getItem("neighbor_home_accuracy") || null;
+let neighborPlatformSettings = JSON.parse(localStorage.getItem(NEIGHBOR_SETTINGS_KEY) || "null");
 
 const homePanel = document.getElementById("homePanel");
 const resumeFollowupCard = document.getElementById("resumeFollowupCard");
@@ -209,6 +211,63 @@ const alertDefinitions = {
     priority: 3
   }
 };
+
+function applyNeighborEmergencyCategories(settings = neighborPlatformSettings) {
+  const categories = settings?.neighbor_app?.emergency_categories;
+  if (!Array.isArray(categories) || categories.length === 0) return false;
+
+  const enabledByType = new Map(
+    categories
+      .filter((category) => category?.enabled !== false)
+      .map((category) => [String(category.type || "").toUpperCase(), category])
+  );
+
+  document.querySelectorAll(".emergency-option").forEach((button) => {
+    const type = String(button.dataset.type || "").toUpperCase();
+    const category = enabledByType.get(type);
+    button.hidden = !category;
+    button.disabled = !category;
+    if (!category) {
+      button.classList.remove("active");
+      return;
+    }
+
+    const icon = button.querySelector(".emoji");
+    const label = button.querySelector("span:last-child");
+    if (icon && category.icon) icon.textContent = category.icon;
+    if (label) label.textContent = category.title_override || category.title || alertDefinitions[type]?.title || type;
+    if (category.color) button.style.borderColor = category.color;
+    if (alertDefinitions[type]) {
+      alertDefinitions[type].title = category.title_override || category.title || alertDefinitions[type].title;
+      alertDefinitions[type].priority = Number(category.priority || alertDefinitions[type].priority || 3);
+    }
+  });
+
+  const selectedButton = document.querySelector(`.emergency-option[data-type="${selectedAlertType}"]`);
+  if (!selectedButton || selectedButton.hidden) {
+    const firstEnabled = document.querySelector(".emergency-option:not([hidden])");
+    if (firstEnabled) selectedAlertType = normalizeAlertType(firstEnabled.dataset.type);
+  }
+  return enabledByType.size > 0;
+}
+
+async function refreshNeighborPlatformSettings() {
+  try {
+    const res = await fetch(`${API}/auth/session`, { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status !== "ok" || !data.platform_settings) {
+      throw new Error(data.message || "No se pudo cargar la configuración municipal");
+    }
+    neighborPlatformSettings = data.platform_settings;
+    localStorage.setItem(NEIGHBOR_SETTINGS_KEY, JSON.stringify(neighborPlatformSettings));
+    applyNeighborEmergencyCategories(neighborPlatformSettings);
+    return neighborPlatformSettings;
+  } catch (error) {
+    console.warn("No se pudo actualizar la configuración municipal", error);
+    applyNeighborEmergencyCategories(neighborPlatformSettings);
+    return neighborPlatformSettings;
+  }
+}
 
 
 function normalizeAlertType(type) {
@@ -962,6 +1021,57 @@ function formatActivityTime(value) {
   });
 }
 
+function captureInlineMediaPlayback(container) {
+  const state = new Map();
+  container?.querySelectorAll?.("[data-inline-media]").forEach((media) => {
+    const key = media.dataset.inlineMedia || media.currentSrc || media.src;
+    if (!key) return;
+    state.set(key, {
+      currentTime: Number.isFinite(media.currentTime) ? media.currentTime : 0,
+      wasPlaying: !media.paused && !media.ended,
+      volume: media.volume,
+      muted: media.muted,
+      playbackRate: media.playbackRate
+    });
+  });
+  return state;
+}
+
+function restoreInlineMediaPlayback(container, state) {
+  if (!container || !state?.size) return;
+  container.querySelectorAll("[data-inline-media]").forEach((media) => {
+    const saved = state.get(media.dataset.inlineMedia || media.currentSrc || media.src);
+    if (!saved) return;
+    const restore = () => {
+      try {
+        if (saved.currentTime > 0 && Number.isFinite(media.duration)) {
+          media.currentTime = Math.min(saved.currentTime, Math.max(0, media.duration - 0.05));
+        }
+        media.volume = saved.volume;
+        media.muted = saved.muted;
+        media.playbackRate = saved.playbackRate;
+        if (saved.wasPlaying) media.play().catch(() => null);
+      } catch (error) {
+        console.warn("No se pudo restaurar la evidencia multimedia", error);
+      }
+    };
+    if (media.readyState >= 1) restore();
+    else media.addEventListener("loadedmetadata", restore, { once: true });
+  });
+}
+
+function activityMediaHtml(kind, mediaUrl) {
+  if (!mediaUrl) return "";
+  const safeUrl = escapeHtml(mediaUrl);
+  if (kind === "audio") {
+    return `<audio class="case-activity-media" controls playsinline preload="metadata" data-inline-media="${safeUrl}" src="${safeUrl}"></audio>`;
+  }
+  if (kind === "video") {
+    return `<video class="case-activity-media case-activity-video" controls playsinline preload="metadata" data-inline-media="${safeUrl}" src="${safeUrl}"></video>`;
+  }
+  return `<a class="case-activity-link" href="${safeUrl}" target="_blank" rel="noopener">Ver evidencia</a>`;
+}
+
 function renderCaseActivity(items = []) {
   if (!caseActivityList || !caseActivityEmpty) return;
 
@@ -977,14 +1087,23 @@ function renderCaseActivity(items = []) {
     .map(({ item }) => item);
   caseActivityEmpty.hidden = list.length > 0;
 
+  const signature = JSON.stringify(list.map((item) => [
+    item.id,
+    item.kind,
+    item.title,
+    item.body,
+    item.media_url,
+    item.created_at
+  ]));
+  if (caseActivityList.dataset.renderSignature === signature) return;
+  const playbackState = captureInlineMediaPlayback(caseActivityList);
+
   caseActivityList.innerHTML = list.map((item) => {
     const kind = item.kind || "event";
     const title = item.title || "Actualización enviada";
     const body = item.body || "";
     const mediaUrl = item.media_url || "";
-    const mediaLink = mediaUrl
-      ? `<a class="case-activity-link" href="${escapeHtml(mediaUrl)}" target="_blank" rel="noopener">Ver evidencia</a>`
-      : "";
+    const mediaLink = activityMediaHtml(kind, mediaUrl);
 
     return `
       <div class="case-activity-item ${escapeHtml(kind)}">
@@ -1000,6 +1119,8 @@ function renderCaseActivity(items = []) {
       </div>
     `;
   }).join("");
+  caseActivityList.dataset.renderSignature = signature;
+  restoreInlineMediaPlayback(caseActivityList, playbackState);
 }
 
 function prependCaseActivity(item) {
@@ -1014,6 +1135,7 @@ function prependCaseActivity(item) {
 
   if (current) {
     caseActivityList.insertAdjacentHTML("afterbegin", current);
+    delete caseActivityList.dataset.renderSignature;
   }
 }
 
@@ -1222,6 +1344,8 @@ async function showCategories() {
     showActiveAlert();
     return;
   }
+
+  await refreshNeighborPlatformSettings();
 
   homePanel.hidden = true;
   categoryPanel.hidden = false;
@@ -2929,6 +3053,8 @@ document.querySelectorAll(".emergency-option").forEach(button => {
     await sendSOS();
   });
 });
+
+applyNeighborEmergencyCategories();
 
 sosButton.addEventListener("click", showCategories);
 confirmButton.addEventListener("click", sendSOS);
