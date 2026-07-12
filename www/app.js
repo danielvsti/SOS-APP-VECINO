@@ -2838,6 +2838,10 @@ async function connectSecureVoice() {
     uri: `sip:${webrtc.username}@${sipDomain}`,
     authorization_user: webrtc.username,
     register: true,
+    // Las extensiones son efímeras. Un vencimiento corto evita que WA-Center
+    // siga mostrando agentes tmp_* si iOS suspende o termina la app antes de
+    // que JsSIP alcance a enviar el desregistro explícito.
+    register_expires: 60,
     session_timers: false,
     realm: webrtc.realm || "asterisk"
   };
