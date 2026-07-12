@@ -1915,7 +1915,11 @@ async function leaveFollowup() {
 
 async function cancelSOS() {
   if (!currentEventId) {
-    showHome();
+    statusLabel.textContent = "No encontramos la alerta activa para cancelarla";
+    console.error("[CANCEL SOS] Falta currentEventId", {
+      currentTicketId,
+      userId
+    });
     return;
   }
 
@@ -1923,10 +1927,16 @@ async function cancelSOS() {
   statusLabel.textContent = "Cancelando alerta...";
 
   try {
+    const neighborToken = localStorage.getItem(NEIGHBOR_TOKEN_KEY) || "";
+    if (!neighborToken) {
+      throw new Error("Tu sesión venció. Vuelve a ingresar para cancelar la alerta.");
+    }
+
     const res = await fetch(`${API}/public/mobile/cancel`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${neighborToken}`
       },
       body: JSON.stringify({
         event_id: currentEventId,
@@ -1934,8 +1944,10 @@ async function cancelSOS() {
       })
     });
 
-    if (!res.ok) {
-      throw new Error("Error HTTP " + res.status);
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.status === "error") {
+      throw new Error(data.message || `No fue posible cancelar la alerta (HTTP ${res.status})`);
     }
 
     clearCurrentCaseLocal();
@@ -1944,8 +1956,14 @@ async function cancelSOS() {
     statusLabel.textContent = "Alerta cancelada";
     showHome({ force: true });
   } catch (error) {
-    console.error(error);
-    statusLabel.textContent = "No se pudo cancelar la alerta";
+    const message = error?.message || "No se pudo cancelar la alerta";
+    console.error("[CANCEL SOS]", {
+      message,
+      eventId: currentEventId,
+      ticketId: currentTicketId,
+      userId
+    });
+    statusLabel.textContent = message;
     showActiveAlert();
   } finally {
     cancelButton.disabled = false;
