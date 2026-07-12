@@ -38,6 +38,7 @@ const resumeCaseStatus = document.getElementById("resumeCaseStatus");
 const resumeFollowupButton = document.getElementById("resumeFollowupButton");
 const categoryPanel = document.getElementById("categoryPanel");
 const categoryFeedback = document.getElementById("categoryFeedback");
+const emergencyGrid = document.getElementById("emergencyGrid");
 const activePanel = document.getElementById("activePanel");
 const textPanel = document.getElementById("textPanel");
 const audioPanel = document.getElementById("audioPanel");
@@ -216,39 +217,52 @@ function applyNeighborEmergencyCategories(settings = neighborPlatformSettings) {
   const categories = settings?.neighbor_app?.emergency_categories;
   if (!Array.isArray(categories) || categories.length === 0) return false;
 
-  const enabledByType = new Map(
-    categories
-      .filter((category) => category?.enabled !== false)
-      .map((category) => [String(category.type || "").toUpperCase(), category])
-  );
+  const enabledCategories = categories
+    .filter((category) => category?.enabled !== false)
+    .map((category, index) => ({
+      ...category,
+      type: String(category.type || "").trim().toUpperCase(),
+      order: Number(category.order ?? ((index + 1) * 10))
+    }))
+    .filter((category) => /^[A-Z0-9_]{1,48}$/.test(category.type))
+    .sort((a, b) => a.order - b.order || String(a.title || a.type).localeCompare(String(b.title || b.type), "es"));
 
-  document.querySelectorAll(".emergency-option").forEach((button) => {
-    const type = String(button.dataset.type || "").toUpperCase();
-    const category = enabledByType.get(type);
-    button.hidden = !category;
-    button.disabled = !category;
-    if (!category) {
-      button.classList.remove("active");
-      return;
-    }
+  if (!emergencyGrid || enabledCategories.length === 0) return false;
 
-    const icon = button.querySelector(".emoji");
-    const label = button.querySelector("span:last-child");
-    if (icon && category.icon) icon.textContent = category.icon;
-    if (label) label.textContent = category.title_override || category.title || alertDefinitions[type]?.title || type;
+  const fragment = document.createDocumentFragment();
+  enabledCategories.forEach((category) => {
+    const type = category.type;
+    const title = category.title_override || category.title || alertDefinitions[type]?.title || type;
+    const priority = Number(category.priority || alertDefinitions[type]?.priority || 3);
+
+    alertDefinitions[type] = { title, priority };
+
+    const button = document.createElement("button");
+    button.className = "emergency-option";
+    button.type = "button";
+    button.dataset.type = type;
+    button.setAttribute("aria-label", title);
     if (category.color) button.style.borderColor = category.color;
-    if (alertDefinitions[type]) {
-      alertDefinitions[type].title = category.title_override || category.title || alertDefinitions[type].title;
-      alertDefinitions[type].priority = Number(category.priority || alertDefinitions[type].priority || 3);
-    }
+
+    const icon = document.createElement("span");
+    icon.className = "emoji";
+    icon.textContent = category.icon || alertTypeIcon(type);
+
+    const label = document.createElement("span");
+    label.textContent = title;
+
+    button.append(icon, label);
+    fragment.appendChild(button);
   });
 
+  emergencyGrid.replaceChildren(fragment);
+
   const selectedButton = document.querySelector(`.emergency-option[data-type="${selectedAlertType}"]`);
-  if (!selectedButton || selectedButton.hidden) {
-    const firstEnabled = document.querySelector(".emergency-option:not([hidden])");
-    if (firstEnabled) selectedAlertType = normalizeAlertType(firstEnabled.dataset.type);
+  if (!selectedButton) {
+    const firstEnabled = emergencyGrid.querySelector(".emergency-option");
+    if (firstEnabled) setCurrentAlertType(firstEnabled.dataset.type);
   }
-  return enabledByType.size > 0;
+  return true;
 }
 
 async function refreshNeighborPlatformSettings() {
@@ -272,6 +286,10 @@ async function refreshNeighborPlatformSettings() {
 
 function normalizeAlertType(type) {
   const raw = String(type || "SOS_MANUAL").toUpperCase();
+  // Los códigos entregados por el catálogo municipal son canónicos. Esta
+  // comprobación debe ocurrir antes de los alias históricos para no convertir,
+  // por ejemplo, MEDICAL_PEDIATRIC en MEDICAL.
+  if (raw in alertDefinitions) return raw;
   if (raw.includes("VIF")) return raw.includes("SILENT") ? "VIF_SILENT_SHAKE" : "VIF";
   if (raw.includes("FIRE") || raw.includes("INCEND")) return "FIRE";
   if (raw.includes("MED")) return "MEDICAL";
@@ -280,7 +298,7 @@ function normalizeAlertType(type) {
   if (raw.includes("ACCIDENT")) return "TRAFFIC_ACCIDENT";
   if (raw.includes("RISK") || raw.includes("RIESGO")) return "URBAN_RISK";
   if (raw.includes("OTHER") || raw.includes("OTRO")) return "OTHER";
-  return raw in alertDefinitions ? raw : "SOS_MANUAL";
+  return /^[A-Z0-9_]{1,48}$/.test(raw) ? raw : "SOS_MANUAL";
 }
 
 function alertTypeIcon(type) {
@@ -3054,22 +3072,25 @@ function resumeFollowup() {
   refreshStatus();
 }
 
-document.querySelectorAll(".emergency-option").forEach(button => {
-  button.addEventListener("click", async () => {
-    if (button.disabled || currentEventId) return;
+emergencyGrid?.addEventListener("click", async (event) => {
+  const button = event.target.closest(".emergency-option");
+  if (!button || !emergencyGrid.contains(button) || button.disabled || currentEventId) return;
 
-    document
-      .querySelectorAll(".emergency-option")
-      .forEach(option => option.classList.remove("active"));
+  emergencyGrid
+    .querySelectorAll(".emergency-option")
+    .forEach(option => option.classList.remove("active"));
 
-    button.classList.add("active");
-    selectedAlertType = normalizeAlertType(button.dataset.type);
+  button.classList.add("active");
+  selectedAlertType = normalizeAlertType(button.dataset.type);
 
-    statusLabel.textContent =
-      "Enviando " + alertDefinitions[selectedAlertType].title + "...";
+  const definition = alertDefinitions[selectedAlertType] || {
+    title: button.textContent.trim() || selectedAlertType,
+    priority: 3
+  };
+  alertDefinitions[selectedAlertType] = definition;
+  statusLabel.textContent = "Enviando " + definition.title + "...";
 
-    await sendSOS();
-  });
+  await sendSOS();
 });
 
 applyNeighborEmergencyCategories();
