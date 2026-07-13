@@ -1368,15 +1368,15 @@ function announcementHostedVideo(rawUrl) {
       let id = parsed.searchParams.get("v") || "";
       const parts = parsed.pathname.split("/").filter(Boolean);
       if (!id && ["embed", "shorts", "live"].includes(parts[0])) id = parts[1] || "";
-      if (/^[A-Za-z0-9_-]{6,20}$/.test(id)) return { provider:"YouTube", url:`https://www.youtube.com/watch?v=${id}`, thumbnail:`https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
+      if (/^[A-Za-z0-9_-]{6,20}$/.test(id)) return { provider:"youtube", label:"YouTube", id, url:`https://www.youtube.com/watch?v=${id}`, thumbnail:`https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
     }
     if (host === "youtu.be") {
       const id = parsed.pathname.split("/").filter(Boolean)[0] || "";
-      if (/^[A-Za-z0-9_-]{6,20}$/.test(id)) return { provider:"YouTube", url:`https://www.youtube.com/watch?v=${id}`, thumbnail:`https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
+      if (/^[A-Za-z0-9_-]{6,20}$/.test(id)) return { provider:"youtube", label:"YouTube", id, url:`https://www.youtube.com/watch?v=${id}`, thumbnail:`https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
     }
     if (["vimeo.com", "player.vimeo.com"].includes(host)) {
       const id = parsed.pathname.split("/").filter(Boolean).find(part => /^\d+$/.test(part)) || "";
-      if (id) return { provider:"Vimeo", url:`https://vimeo.com/${id}`, thumbnail:null };
+      if (id) return { provider:"vimeo", label:"Vimeo", id, url:`https://vimeo.com/${id}`, thumbnail:null };
     }
   } catch (_) {}
   return null;
@@ -1402,7 +1402,14 @@ function announcementMediaHtml(item) {
   if (String(item.media_type).toUpperCase() === "VIDEO") {
     const hosted = announcementHostedVideo(rawUrl);
     if (hosted) {
-      return `<button class="announcement-hosted-video" type="button" data-hosted-video-url="${escapeHtml(hosted.url)}" aria-label="Reproducir video en ${escapeHtml(hosted.provider)}">${hosted.thumbnail ? `<img src="${escapeHtml(hosted.thumbnail)}" alt="" loading="lazy">` : `<span class="hosted-video-placeholder">Vimeo</span>`}<span class="hosted-video-play">▶</span><span class="hosted-video-label">Ver video en ${escapeHtml(hosted.provider)}</span></button>`;
+      const playerUrl = `${API}/public/announcement-video/${encodeURIComponent(hosted.provider)}/${encodeURIComponent(hosted.id)}`;
+      return `<div class="announcement-video-embed" data-inline-hosted-video>
+        <iframe src="${escapeHtml(playerUrl)}" title="Video municipal en ${escapeHtml(hosted.label)}" loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        <div class="announcement-video-fallback">
+          <span>Si el proveedor bloquea este video,</span>
+          <button type="button" data-hosted-video-url="${escapeHtml(hosted.url)}">abrir en ${escapeHtml(hosted.label)}</button>
+        </div>
+      </div>`;
     }
     return `<video controls playsinline preload="metadata" src="${url}"></video>`;
   }
@@ -1450,6 +1457,7 @@ function renderCurrentNeighborAnnouncement() {
   }));
   neighborAnnouncementsList.querySelector("[data-hosted-video-url]")?.addEventListener("click", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     openHostedAnnouncementVideo(event.currentTarget.dataset.hostedVideoUrl);
   });
   neighborAnnouncementsList.querySelector("[data-announcement-prev]")?.addEventListener("click", () => {
