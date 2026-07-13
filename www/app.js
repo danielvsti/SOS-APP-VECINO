@@ -35,6 +35,8 @@ const homePanel = document.getElementById("homePanel");
 const neighborAnnouncementsSection = document.getElementById("neighborAnnouncementsSection");
 const neighborAnnouncementsList = document.getElementById("neighborAnnouncementsList");
 const neighborAnnouncementsUnread = document.getElementById("neighborAnnouncementsUnread");
+let neighborAnnouncements = [];
+let neighborAnnouncementIndex = 0;
 const resumeFollowupCard = document.getElementById("resumeFollowupCard");
 const resumeTicketId = document.getElementById("resumeTicketId");
 const resumeCaseStatus = document.getElementById("resumeCaseStatus");
@@ -1366,15 +1368,15 @@ function announcementVideoEmbedUrl(rawUrl) {
       let id = parsed.searchParams.get("v") || "";
       const parts = parsed.pathname.split("/").filter(Boolean);
       if (!id && ["embed", "shorts", "live"].includes(parts[0])) id = parts[1] || "";
-      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `${API}/public/announcement-video/youtube/${id}` : null;
     }
     if (host === "youtu.be") {
       const id = parsed.pathname.split("/").filter(Boolean)[0] || "";
-      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `${API}/public/announcement-video/youtube/${id}` : null;
     }
     if (["vimeo.com", "player.vimeo.com"].includes(host)) {
       const id = parsed.pathname.split("/").filter(Boolean).find(part => /^\d+$/.test(part)) || "";
-      return id ? `https://player.vimeo.com/video/${id}` : null;
+      return id ? `${API}/public/announcement-video/vimeo/${id}` : null;
     }
   } catch (_) {}
   return null;
@@ -1401,26 +1403,53 @@ function renderNeighborAnnouncements(items = []) {
     neighborAnnouncementsList.innerHTML = "";
     return;
   }
+  neighborAnnouncements = items;
+  neighborAnnouncementIndex = Math.min(neighborAnnouncementIndex, Math.max(0, items.length - 1));
   neighborAnnouncementsSection.hidden = false;
   const unread = items.filter(item => !item.opened).length;
   if (neighborAnnouncementsUnread) {
     neighborAnnouncementsUnread.hidden = unread === 0;
     neighborAnnouncementsUnread.textContent = unread ? `${unread} nuevo${unread === 1 ? "" : "s"}` : "";
   }
-  neighborAnnouncementsList.innerHTML = items.map(item => `
+  renderCurrentNeighborAnnouncement();
+}
+
+function renderCurrentNeighborAnnouncement() {
+  if (!neighborAnnouncementsList || !neighborAnnouncements.length) return;
+  const item = neighborAnnouncements[neighborAnnouncementIndex];
+  const total = neighborAnnouncements.length;
+  neighborAnnouncementsList.innerHTML = `
     <article class="neighbor-announcement-card ${item.audience_type === "PERSONAL" ? "personal" : "broadcast"} ${item.opened ? "opened" : "unread"}" data-announcement-id="${escapeHtml(item.id)}">
       <div class="announcement-kind">${item.audience_type === "PERSONAL" ? "👤 Mensaje para ti" : "🏛️ Anuncio municipal"}</div>
       ${announcementMediaHtml(item)}
       <h3>${escapeHtml(item.title)}</h3>
       ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
       <div class="announcement-date">${new Date(item.created_at).toLocaleDateString("es-CL", { day:"2-digit", month:"short", year:"numeric" })}</div>
-    </article>`).join("");
+    </article>
+    ${total > 1 ? `<div class="announcement-carousel-controls"><button type="button" data-announcement-prev aria-label="Anuncio anterior">‹</button><span>${neighborAnnouncementIndex + 1} de ${total}</span><button type="button" data-announcement-next aria-label="Anuncio siguiente">›</button></div>` : ""}`;
   neighborAnnouncementsList.querySelectorAll("[data-announcement-id]").forEach(card => card.addEventListener("click", async () => {
     if (!card.classList.contains("unread")) return;
     card.classList.remove("unread");
     card.classList.add("opened");
+    item.opened = true;
+    updateNeighborAnnouncementUnread();
     try { await fetch(`${API}/neighbor/announcements/${encodeURIComponent(card.dataset.announcementId)}/read`, { method:"POST" }); } catch (_) {}
   }));
+  neighborAnnouncementsList.querySelector("[data-announcement-prev]")?.addEventListener("click", () => {
+    neighborAnnouncementIndex = (neighborAnnouncementIndex - 1 + total) % total;
+    renderCurrentNeighborAnnouncement();
+  });
+  neighborAnnouncementsList.querySelector("[data-announcement-next]")?.addEventListener("click", () => {
+    neighborAnnouncementIndex = (neighborAnnouncementIndex + 1) % total;
+    renderCurrentNeighborAnnouncement();
+  });
+}
+
+function updateNeighborAnnouncementUnread() {
+  const unread = neighborAnnouncements.filter(item => !item.opened).length;
+  if (!neighborAnnouncementsUnread) return;
+  neighborAnnouncementsUnread.hidden = unread === 0;
+  neighborAnnouncementsUnread.textContent = unread ? `${unread} nuevo${unread === 1 ? "" : "s"}` : "";
 }
 
 async function loadNeighborAnnouncements() {
