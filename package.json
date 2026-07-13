@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
+    "@capacitor/browser": "^8.0.3",
     "@capacitor/cli": "latest",
     "@capacitor/core": "latest",
     "@capacitor/ios": "latest",

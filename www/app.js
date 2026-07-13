@@ -1360,7 +1360,7 @@ function showHome(options = {
   }
 }
 
-function announcementVideoEmbedUrl(rawUrl) {
+function announcementHostedVideo(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
     const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
@@ -1368,18 +1368,31 @@ function announcementVideoEmbedUrl(rawUrl) {
       let id = parsed.searchParams.get("v") || "";
       const parts = parsed.pathname.split("/").filter(Boolean);
       if (!id && ["embed", "shorts", "live"].includes(parts[0])) id = parts[1] || "";
-      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `${API}/public/announcement-video/youtube/${id}` : null;
+      if (/^[A-Za-z0-9_-]{6,20}$/.test(id)) return { provider:"YouTube", url:`https://www.youtube.com/watch?v=${id}`, thumbnail:`https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
     }
     if (host === "youtu.be") {
       const id = parsed.pathname.split("/").filter(Boolean)[0] || "";
-      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `${API}/public/announcement-video/youtube/${id}` : null;
+      if (/^[A-Za-z0-9_-]{6,20}$/.test(id)) return { provider:"YouTube", url:`https://www.youtube.com/watch?v=${id}`, thumbnail:`https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
     }
     if (["vimeo.com", "player.vimeo.com"].includes(host)) {
       const id = parsed.pathname.split("/").filter(Boolean).find(part => /^\d+$/.test(part)) || "";
-      return id ? `${API}/public/announcement-video/vimeo/${id}` : null;
+      if (id) return { provider:"Vimeo", url:`https://vimeo.com/${id}`, thumbnail:null };
     }
   } catch (_) {}
   return null;
+}
+
+async function openHostedAnnouncementVideo(url) {
+  try {
+    const browserPlugin = window.Capacitor?.Plugins?.Browser;
+    if (browserPlugin?.open) {
+      await browserPlugin.open({ url, presentationStyle:"fullscreen", toolbarColor:"#0f172a" });
+      return;
+    }
+  } catch (error) {
+    console.warn("[ANNOUNCEMENT VIDEO] No se pudo abrir navegador integrado", error);
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function announcementMediaHtml(item) {
@@ -1387,9 +1400,9 @@ function announcementMediaHtml(item) {
   const url = escapeHtml(rawUrl);
   if (!url) return "";
   if (String(item.media_type).toUpperCase() === "VIDEO") {
-    const embedUrl = announcementVideoEmbedUrl(rawUrl);
-    if (embedUrl) {
-      return `<div class="announcement-video-embed"><iframe src="${escapeHtml(embedUrl)}" title="${escapeHtml(item.title || "Video municipal")}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`;
+    const hosted = announcementHostedVideo(rawUrl);
+    if (hosted) {
+      return `<button class="announcement-hosted-video" type="button" data-hosted-video-url="${escapeHtml(hosted.url)}" aria-label="Reproducir video en ${escapeHtml(hosted.provider)}">${hosted.thumbnail ? `<img src="${escapeHtml(hosted.thumbnail)}" alt="" loading="lazy">` : `<span class="hosted-video-placeholder">Vimeo</span>`}<span class="hosted-video-play">▶</span><span class="hosted-video-label">Ver video en ${escapeHtml(hosted.provider)}</span></button>`;
     }
     return `<video controls playsinline preload="metadata" src="${url}"></video>`;
   }
@@ -1435,6 +1448,10 @@ function renderCurrentNeighborAnnouncement() {
     updateNeighborAnnouncementUnread();
     try { await fetch(`${API}/neighbor/announcements/${encodeURIComponent(card.dataset.announcementId)}/read`, { method:"POST" }); } catch (_) {}
   }));
+  neighborAnnouncementsList.querySelector("[data-hosted-video-url]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    openHostedAnnouncementVideo(event.currentTarget.dataset.hostedVideoUrl);
+  });
   neighborAnnouncementsList.querySelector("[data-announcement-prev]")?.addEventListener("click", () => {
     neighborAnnouncementIndex = (neighborAnnouncementIndex - 1 + total) % total;
     renderCurrentNeighborAnnouncement();
