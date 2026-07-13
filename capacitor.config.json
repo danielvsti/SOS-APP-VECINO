@@ -2,6 +2,11 @@
   "appId": "cl.vsti.sosvecino",
   "appName": "SOS Municipal",
   "webDir": "www",
+  "server": {
+    "hostname": "app.sos.vsti.cl",
+    "iosScheme": "https",
+    "androidScheme": "https"
+  },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 1200,
