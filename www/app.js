@@ -1358,10 +1358,37 @@ function showHome(options = {
   }
 }
 
+function announcementVideoEmbedUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (["youtube.com", "m.youtube.com", "youtube-nocookie.com"].includes(host)) {
+      let id = parsed.searchParams.get("v") || "";
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (!id && ["embed", "shorts", "live"].includes(parts[0])) id = parts[1] || "";
+      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+    }
+    if (host === "youtu.be") {
+      const id = parsed.pathname.split("/").filter(Boolean)[0] || "";
+      return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null;
+    }
+    if (["vimeo.com", "player.vimeo.com"].includes(host)) {
+      const id = parsed.pathname.split("/").filter(Boolean).find(part => /^\d+$/.test(part)) || "";
+      return id ? `https://player.vimeo.com/video/${id}` : null;
+    }
+  } catch (_) {}
+  return null;
+}
+
 function announcementMediaHtml(item) {
-  const url = escapeHtml(item.media_url || "");
+  const rawUrl = String(item.media_url || "");
+  const url = escapeHtml(rawUrl);
   if (!url) return "";
   if (String(item.media_type).toUpperCase() === "VIDEO") {
+    const embedUrl = announcementVideoEmbedUrl(rawUrl);
+    if (embedUrl) {
+      return `<div class="announcement-video-embed"><iframe src="${escapeHtml(embedUrl)}" title="${escapeHtml(item.title || "Video municipal")}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`;
+    }
     return `<video controls playsinline preload="metadata" src="${url}"></video>`;
   }
   return `<img src="${url}" alt="${escapeHtml(item.title || "Anuncio municipal")}" loading="lazy">`;
