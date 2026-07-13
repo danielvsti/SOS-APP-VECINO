@@ -1411,10 +1411,7 @@ function announcementMediaHtml(item) {
   if (String(item.media_type).toUpperCase() === "VIDEO") {
     const hosted = announcementHostedVideo(rawUrl);
     if (hosted) {
-      const appOrigin = "https://app.sos.vsti.cl";
-      const playerUrl = hosted.provider === "youtube"
-        ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(hosted.id)}?playsinline=1&controls=1&rel=0&origin=${encodeURIComponent(appOrigin)}&widget_referrer=${encodeURIComponent(appOrigin)}`
-        : `https://player.vimeo.com/video/${encodeURIComponent(hosted.id)}?playsinline=1`;
+      const playerUrl = `${API}/public/announcement-video/${encodeURIComponent(hosted.provider)}/${encodeURIComponent(hosted.id)}`;
       return `<div class="announcement-video-embed" data-inline-hosted-video>
         <iframe src="${escapeHtml(playerUrl)}" title="Video municipal en ${escapeHtml(hosted.label)}" loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
         <div class="announcement-video-fallback">
