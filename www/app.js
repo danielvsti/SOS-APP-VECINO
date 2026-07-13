@@ -15,6 +15,15 @@ const IS_APP_STANDALONE =
   window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
   window.navigator.standalone === true ||
   Boolean(window.Capacitor?.isNativePlatform?.());
+const IS_NATIVE_IOS = window.Capacitor?.getPlatform?.() === "ios";
+
+function focusTextControl(control, delay = 0) {
+  if (!control || IS_NATIVE_IOS) return;
+  setTimeout(() => {
+    if (control.hidden || control.closest?.("[hidden]")) return;
+    control.focus({ preventScroll: true });
+  }, delay);
+}
 
 document.documentElement.classList.toggle("app-standalone", IS_APP_STANDALONE);
 
@@ -602,7 +611,7 @@ function showOtp({
   otpHelpText.textContent = `Ingresa el código enviado a ${pendingOtpPhone}.`;
   showOtpDemoCode(demoCode);
   statusLabel.textContent = "Código enviado";
-  setTimeout(() => otpCode.focus(), 100);
+  focusTextControl(otpCode, 100);
 }
 
 function showAuth() {
@@ -2216,7 +2225,7 @@ function openTextMessageModal() {
   textPanel.style.removeProperty("display");
   document.body.classList.add("modal-open");
 
-  setTimeout(() => textMessage?.focus(), 80);
+  focusTextControl(textMessage, 80);
 }
 
 function closeTextMessageModal() {
@@ -3471,10 +3480,7 @@ setTimeout(hideNeighborTechnicalInfoBox, 1000);
     modal.style.removeProperty("display");
     document.body.classList.add("modal-open");
 
-    setTimeout(() => {
-      const textarea = document.getElementById("textMessage");
-      if (textarea) textarea.focus();
-    }, 80);
+    focusTextControl(document.getElementById("textMessage"), 80);
   }
 
   // Cierre por click en X, Cancelar o fondo oscuro.
