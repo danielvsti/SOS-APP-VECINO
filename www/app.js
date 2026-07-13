@@ -32,6 +32,9 @@ let homeAccuracy = localStorage.getItem("neighbor_home_accuracy") || null;
 let neighborPlatformSettings = JSON.parse(localStorage.getItem(NEIGHBOR_SETTINGS_KEY) || "null");
 
 const homePanel = document.getElementById("homePanel");
+const neighborAnnouncementsSection = document.getElementById("neighborAnnouncementsSection");
+const neighborAnnouncementsList = document.getElementById("neighborAnnouncementsList");
+const neighborAnnouncementsUnread = document.getElementById("neighborAnnouncementsUnread");
 const resumeFollowupCard = document.getElementById("resumeFollowupCard");
 const resumeTicketId = document.getElementById("resumeTicketId");
 const resumeCaseStatus = document.getElementById("resumeCaseStatus");
@@ -1345,6 +1348,7 @@ function showHome(options = {
   confirmButton.disabled = !isNeighborAccountAllowed();
   backButton.disabled = false;
   updateResumeFollowupCard();
+  loadNeighborAnnouncements().catch((error) => console.warn("[ANNOUNCEMENTS]", error));
   if (!isNeighborAccountAllowed()) {
     statusLabel.textContent = "Cuenta no habilitada";
   } else {
@@ -1352,6 +1356,56 @@ function showHome(options = {
       ? "Tienes un caso activo en seguimiento"
       : "Lista para usar";
   }
+}
+
+function announcementMediaHtml(item) {
+  const url = escapeHtml(item.media_url || "");
+  if (!url) return "";
+  if (String(item.media_type).toUpperCase() === "VIDEO") {
+    return `<video controls playsinline preload="metadata" src="${url}"></video>`;
+  }
+  return `<img src="${url}" alt="${escapeHtml(item.title || "Anuncio municipal")}" loading="lazy">`;
+}
+
+function renderNeighborAnnouncements(items = []) {
+  if (!neighborAnnouncementsSection || !neighborAnnouncementsList) return;
+  if (!items.length) {
+    neighborAnnouncementsSection.hidden = true;
+    neighborAnnouncementsList.innerHTML = "";
+    return;
+  }
+  neighborAnnouncementsSection.hidden = false;
+  const unread = items.filter(item => !item.opened).length;
+  if (neighborAnnouncementsUnread) {
+    neighborAnnouncementsUnread.hidden = unread === 0;
+    neighborAnnouncementsUnread.textContent = unread ? `${unread} nuevo${unread === 1 ? "" : "s"}` : "";
+  }
+  neighborAnnouncementsList.innerHTML = items.map(item => `
+    <article class="neighbor-announcement-card ${item.audience_type === "PERSONAL" ? "personal" : "broadcast"} ${item.opened ? "opened" : "unread"}" data-announcement-id="${escapeHtml(item.id)}">
+      <div class="announcement-kind">${item.audience_type === "PERSONAL" ? "👤 Mensaje para ti" : "🏛️ Anuncio municipal"}</div>
+      ${announcementMediaHtml(item)}
+      <h3>${escapeHtml(item.title)}</h3>
+      ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
+      <div class="announcement-date">${new Date(item.created_at).toLocaleDateString("es-CL", { day:"2-digit", month:"short", year:"numeric" })}</div>
+    </article>`).join("");
+  neighborAnnouncementsList.querySelectorAll("[data-announcement-id]").forEach(card => card.addEventListener("click", async () => {
+    if (!card.classList.contains("unread")) return;
+    card.classList.remove("unread");
+    card.classList.add("opened");
+    try { await fetch(`${API}/neighbor/announcements/${encodeURIComponent(card.dataset.announcementId)}/read`, { method:"POST" }); } catch (_) {}
+  }));
+}
+
+async function loadNeighborAnnouncements() {
+  if (!isNeighborRegistered() || !neighborAnnouncementsSection) return;
+  const response = await fetch(`${API}/neighbor/announcements`, { cache:"no-store" });
+  if (response.status === 401) return;
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status !== "ok" || data.enabled !== true) {
+    neighborAnnouncementsSection.hidden = true;
+    return;
+  }
+  renderNeighborAnnouncements(data.announcements || []);
 }
 
 async function showCategories() {
