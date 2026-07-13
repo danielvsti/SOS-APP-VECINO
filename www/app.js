@@ -168,6 +168,11 @@ let currentTicketId = localStorage.getItem("ticket_id");
 let currentResolverName = null;
 let followupMinimized = localStorage.getItem("followup_minimized") === "true";
 let selectedAlertType = localStorage.getItem("current_alert_type") || "SOS_MANUAL";
+let statusPollInFlight = false;
+let statusPollPausedForAuth = false;
+let statusPollFailureCount = 0;
+let statusPollLastLogAt = 0;
+let statusPollLastSignature = "";
 let mediaRecorder = null;
 let audioChunks = [];
 let audioStream = null;
@@ -442,6 +447,48 @@ function clearNeighborProfile() {
   localStorage.removeItem(NEIGHBOR_TOKEN_KEY);
 }
 
+function resetStatusPollFailures() {
+  statusPollFailureCount = 0;
+  statusPollLastLogAt = 0;
+  statusPollLastSignature = "";
+}
+
+function statusPollErrorMessage(error) {
+  if (typeof error === "string") return error;
+  if (error?.message) return String(error.message);
+  return "No fue posible consultar el estado del caso";
+}
+
+function logStatusPollFailure(error) {
+  statusPollFailureCount += 1;
+  const message = statusPollErrorMessage(error);
+  const status = Number(error?.status || 0);
+  const signature = `${status}:${message}`;
+  const now = Date.now();
+
+  // Un corte de red persistente no debe inundar la consola cada cinco
+  // segundos. Se informa el primer fallo, cuando cambia el error y luego como
+  // máximo una vez por minuto mientras continúe el mismo problema.
+  if (signature !== statusPollLastSignature || now - statusPollLastLogAt >= 60_000) {
+    const httpDetail = status ? ` · HTTP ${status}` : "";
+    console.warn(`[STATUS POLL] ${message}${httpDetail} · intento ${statusPollFailureCount}`);
+    statusPollLastSignature = signature;
+    statusPollLastLogAt = now;
+  }
+}
+
+function handleNeighborSessionExpired(message = "Tu sesión expiró") {
+  if (statusPollPausedForAuth) return;
+
+  const phone = neighborProfile?.phone || loginPhone?.value || "";
+  statusPollPausedForAuth = true;
+  resetStatusPollFailures();
+  clearNeighborProfile();
+  showAuth();
+  if (phone && loginPhone) loginPhone.value = phone;
+  statusLabel.textContent = `${message}. Ingresa nuevamente para continuar.`;
+}
+
 function updateProfileCard() {
   if (!neighborProfile) return;
 
@@ -457,10 +504,17 @@ async function refreshNeighborProfileFromServer(options = {}) {
 
   try {
     const res = await fetch(`${API}/auth/me?user_id=${encodeURIComponent(userId)}`);
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 401) {
+      handleNeighborSessionExpired(data.message || "Tu sesión expiró");
+      return false;
+    }
 
     if (!res.ok || data.status !== "ok") {
-      throw new Error(data.message || "No se pudo actualizar perfil");
+      const error = new Error(data.message || "No se pudo actualizar perfil");
+      error.status = res.status;
+      throw error;
     }
 
     if (data.user) {
@@ -763,13 +817,19 @@ async function verifyOtpCode() {
 
     localStorage.setItem(NEIGHBOR_TOKEN_KEY, data.token);
     saveNeighborProfile(data.user);
+    statusPollPausedForAuth = false;
+    resetStatusPollFailures();
     updateProfileCard();
     localStorage.removeItem("pending_otp_phone");
     localStorage.removeItem("pending_otp_purpose");
     localStorage.removeItem("pending_otp_mode");
     resetOtpDemo();
     statusLabel.textContent = `Bienvenido/a, ${data.user.full_name}`;
-    await recoverActiveCase();
+    if (currentEventId) {
+      await refreshStatus();
+    } else {
+      await recoverActiveCase();
+    }
     showHome({ force: true });
   } catch (error) {
     console.error(error);
@@ -2133,16 +2193,26 @@ async function cancelSOS() {
 }
 
 async function refreshStatus() {
-  if (!currentEventId) return;
+  if (!currentEventId || statusPollPausedForAuth || statusPollInFlight) return;
+
+  statusPollInFlight = true;
 
   try {
     const res = await fetch(`${API}/public/mobile/status/${currentEventId}`);
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 401) {
+      handleNeighborSessionExpired(data.message || "Tu sesión expiró");
+      return;
+    }
 
     if (!res.ok || data.status === "error") {
-      throw new Error(data.message || ("Error HTTP " + res.status));
+      const error = new Error(data.message || ("Error HTTP " + res.status));
+      error.status = res.status;
+      throw error;
     }
+    resetStatusPollFailures();
     const event = data?.event || {};
     const terminalStates = ["CANCELLED", "CLOSED", "RESOLVED"];
 
@@ -2197,8 +2267,10 @@ async function refreshStatus() {
       return;
     }
   } catch (error) {
-    console.error(error);
+    logStatusPollFailure(error);
     statusLabel.textContent = "Sin conexión con plataforma";
+  } finally {
+    statusPollInFlight = false;
   }
 }
 
