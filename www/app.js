@@ -4,6 +4,7 @@ const NEIGHBOR_TOKEN_KEY = "sos_neighbor_session_token";
 const NEIGHBOR_REFRESH_TOKEN_KEY = "sos_neighbor_refresh_token";
 const NEIGHBOR_PUSH_TOKEN_KEY = "sos_neighbor_push_token";
 const NEIGHBOR_SETTINGS_KEY = "sos_neighbor_platform_settings";
+const CURRENT_CASE_OWNER_KEY = "sos_neighbor_current_case_owner";
 const nativeFetch = window.fetch.bind(window);
 let neighborRefreshPromise = null;
 
@@ -1035,6 +1036,7 @@ function clearCurrentCaseLocal() {
   localStorage.removeItem("event_id");
   localStorage.removeItem("ticket_id");
   localStorage.removeItem("current_alert_type");
+  localStorage.removeItem(CURRENT_CASE_OWNER_KEY);
   selectedAlertType = "SOS_MANUAL";
   updateCaseTypeCard(selectedAlertType);
   eventIdLabel.textContent = "-";
@@ -1399,6 +1401,7 @@ async function recoverActiveCase() {
     setFollowupMinimized(true);
 
     localStorage.setItem("event_id", currentEventId);
+    localStorage.setItem(CURRENT_CASE_OWNER_KEY, String(userId));
     if (currentTicketId) {
       localStorage.setItem("ticket_id", currentTicketId);
     }
@@ -1758,6 +1761,7 @@ async function sendSOS() {
     currentTicketId = data.ticket_id || null;
 
     localStorage.setItem("event_id", currentEventId);
+    localStorage.setItem(CURRENT_CASE_OWNER_KEY, String(userId));
     setCurrentAlertType(selectedAlertType);
     setFollowupMinimized(false);
     if (currentTicketId) {
@@ -1843,6 +1847,7 @@ async function sendMobileSOSPayload({ alert_type, title, priority = 1, descripti
     currentEventId = data.event_id;
     currentTicketId = data.ticket_id || null;
     localStorage.setItem("event_id", currentEventId);
+    localStorage.setItem(CURRENT_CASE_OWNER_KEY, String(userId));
     if (currentTicketId) localStorage.setItem("ticket_id", currentTicketId);
 
     eventIdLabel.textContent = currentEventId;
@@ -2246,6 +2251,18 @@ async function refreshStatus() {
 
     if (res.status === 401) {
       handleNeighborSessionExpired(data.message || "Tu sesión expiró");
+      return;
+    }
+
+    if (res.status === 403) {
+      // El evento guardado puede pertenecer a un usuario anterior del mismo
+      // dispositivo. Se descarta localmente y se recupera exclusivamente el
+      // caso activo asociado a la sesión autenticada actual.
+      clearCurrentCaseLocal();
+      statusLabel.textContent = "Sincronizando tus casos...";
+      const recovered = await recoverActiveCase();
+      showHome({ force: true });
+      if (!recovered) statusLabel.textContent = "Lista para usar";
       return;
     }
 
@@ -3546,6 +3563,7 @@ async function handleNeighborPushAction(data = {}) {
   if (data.event_id) {
     currentEventId = String(data.event_id);
     localStorage.setItem("event_id", currentEventId);
+    if (userId) localStorage.setItem(CURRENT_CASE_OWNER_KEY, String(userId));
   }
   if (data.ticket_id) {
     currentTicketId = String(data.ticket_id);
@@ -3612,6 +3630,11 @@ async function registerNeighborPushNotifications() {
 
 async function initializeApp() {
   updateTicketLabels();
+
+  const storedCaseOwner = localStorage.getItem(CURRENT_CASE_OWNER_KEY);
+  if (currentEventId && storedCaseOwner && String(storedCaseOwner) !== String(userId || "")) {
+    clearCurrentCaseLocal();
+  }
 
   if (currentEventId) {
     eventIdLabel.textContent = currentEventId;
