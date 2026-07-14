@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "803771017346",
+    "project_id": "sos-municipal-vsti",
+    "storage_bucket": "sos-municipal-vsti.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:803771017346:android:d5ec6a6f39574d3da72c9b",
+        "android_client_info": {
+          "package_name": "cl.vsti.sosresolutor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBlvN9VEP4HP_5Vqm_F4ujZygyktPPQLCY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:803771017346:android:e2c07463bc987ccba72c9b",
+        "android_client_info": {
+          "package_name": "cl.vsti.sosvecino"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBlvN9VEP4HP_5Vqm_F4ujZygyktPPQLCY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
