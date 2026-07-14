@@ -1,15 +1,53 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
 const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
 const NEIGHBOR_TOKEN_KEY = "sos_neighbor_session_token";
+const NEIGHBOR_REFRESH_TOKEN_KEY = "sos_neighbor_refresh_token";
+const NEIGHBOR_PUSH_TOKEN_KEY = "sos_neighbor_push_token";
 const NEIGHBOR_SETTINGS_KEY = "sos_neighbor_platform_settings";
 const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, options = {}) => {
+let neighborRefreshPromise = null;
+
+async function refreshNeighborAccessToken() {
+  const refreshToken = localStorage.getItem(NEIGHBOR_REFRESH_TOKEN_KEY) || "";
+  if (!refreshToken) return false;
+  if (neighborRefreshPromise) return neighborRefreshPromise;
+  neighborRefreshPromise = (async () => {
+    try {
+      const response = await nativeFetch(`${API}/auth/mobile/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken, app_type: "NEIGHBOR" })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status !== "ok" || !data.token || !data.refresh_token) return false;
+      localStorage.setItem(NEIGHBOR_TOKEN_KEY, data.token);
+      localStorage.setItem(NEIGHBOR_REFRESH_TOKEN_KEY, data.refresh_token);
+      if (data.user) saveNeighborProfile(data.user);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      neighborRefreshPromise = null;
+    }
+  })();
+  return neighborRefreshPromise;
+}
+
+window.fetch = async (input, options = {}) => {
   const url = typeof input === "string" ? input : input?.url || "";
   const token = localStorage.getItem(NEIGHBOR_TOKEN_KEY) || "";
   if (!token || !String(url).startsWith(API)) return nativeFetch(input, options);
   const headers = new Headers(options.headers || (typeof input !== "string" ? input?.headers : undefined) || {});
   if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
-  return nativeFetch(input, { ...options, headers });
+  let response = await nativeFetch(input, { ...options, headers });
+  const canRefresh = response.status === 401
+    && !String(url).includes("/auth/mobile/refresh")
+    && Boolean(localStorage.getItem(NEIGHBOR_REFRESH_TOKEN_KEY));
+  if (!canRefresh || !(await refreshNeighborAccessToken())) return response;
+  const retryHeaders = new Headers(headers);
+  retryHeaders.set("Authorization", `Bearer ${localStorage.getItem(NEIGHBOR_TOKEN_KEY) || ""}`);
+  response = await nativeFetch(input, { ...options, headers: retryHeaders });
+  return response;
 };
 const IS_APP_STANDALONE =
   window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
@@ -445,6 +483,7 @@ function clearNeighborProfile() {
   localStorage.removeItem("neighbor_profile");
   localStorage.removeItem("user_id");
   localStorage.removeItem(NEIGHBOR_TOKEN_KEY);
+  localStorage.removeItem(NEIGHBOR_REFRESH_TOKEN_KEY);
 }
 
 function resetStatusPollFailures() {
@@ -801,7 +840,8 @@ async function verifyOtpCode() {
       body: JSON.stringify({
         phone,
         code,
-        purpose: pendingOtpPurpose || null
+        purpose: pendingOtpPurpose || null,
+        client_type: window.Capacitor?.isNativePlatform?.() ? "NATIVE_APP" : "WEB"
       })
     });
 
@@ -816,6 +856,7 @@ async function verifyOtpCode() {
     }
 
     localStorage.setItem(NEIGHBOR_TOKEN_KEY, data.token);
+    if (data.refresh_token) localStorage.setItem(NEIGHBOR_REFRESH_TOKEN_KEY, data.refresh_token);
     saveNeighborProfile(data.user);
     statusPollPausedForAuth = false;
     resetStatusPollFailures();
@@ -825,6 +866,7 @@ async function verifyOtpCode() {
     localStorage.removeItem("pending_otp_mode");
     resetOtpDemo();
     statusLabel.textContent = `Bienvenido/a, ${data.user.full_name}`;
+    await registerNeighborPushNotifications();
     if (currentEventId) {
       await refreshStatus();
     } else {
@@ -3397,13 +3439,29 @@ function saveAppSettings() {
   setNeighborSetting("neighbor_privacy_ack", document.getElementById("neighborPrivacyAck")?.checked ?? false);
 }
 
-function logoutNeighbor() {
+async function logoutNeighbor() {
   if (currentEventId) {
     alert("No puedes salir del perfil mientras hay una alerta activa. Primero vuelve al inicio sin cancelar o cancela la alerta si fue falsa alarma.");
     return;
   }
 
+  const pushToken = localStorage.getItem(NEIGHBOR_PUSH_TOKEN_KEY) || "";
+  const refreshToken = localStorage.getItem(NEIGHBOR_REFRESH_TOKEN_KEY) || "";
+  if (pushToken) {
+    await fetch(`${API}/mobile/push/unregister`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ app_type: "NEIGHBOR", push_token: pushToken })
+    }).catch(() => null);
+  }
+  await nativeFetch(`${API}/auth/logout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  }).catch(() => null);
   clearNeighborProfile();
+  localStorage.removeItem(NEIGHBOR_PUSH_TOKEN_KEY);
+  neighborPushInitialized = false;
   closeAppSettings();
   showAuth();
 }
@@ -3457,6 +3515,101 @@ setInterval(() => {
   }
 }, 30000);
 
+let neighborPushInitialized = false;
+
+async function registerNeighborPushToken(pushToken) {
+  if (!pushToken || !isNeighborRegistered()) return;
+  const platform = window.Capacitor?.getPlatform?.();
+  if (!["ios", "android"].includes(platform)) return;
+  const deviceIdKey = "sos_neighbor_device_id";
+  let deviceId = localStorage.getItem(deviceIdKey);
+  if (!deviceId) {
+    deviceId = globalThis.crypto?.randomUUID?.() || `neighbor-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(deviceIdKey, deviceId);
+  }
+  const response = await fetch(`${API}/mobile/push/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      app_type: "NEIGHBOR",
+      platform,
+      push_token: pushToken,
+      device_id: deviceId,
+      app_version: "0.26.0"
+    })
+  });
+  if (!response.ok) throw new Error("No fue posible registrar las notificaciones");
+  localStorage.setItem(NEIGHBOR_PUSH_TOKEN_KEY, pushToken);
+}
+
+async function handleNeighborPushAction(data = {}) {
+  if (data.event_id) {
+    currentEventId = String(data.event_id);
+    localStorage.setItem("event_id", currentEventId);
+  }
+  if (data.ticket_id) {
+    currentTicketId = String(data.ticket_id);
+    localStorage.setItem("ticket_id", currentTicketId);
+  }
+  if (!currentEventId) await recoverActiveCase().catch(() => false);
+  if (currentEventId) {
+    followupMinimized = false;
+    localStorage.setItem("followup_minimized", "false");
+    showActiveAlert();
+    await refreshStatus();
+  }
+}
+
+async function registerNeighborPushNotifications() {
+  if (neighborPushInitialized || !window.Capacitor?.isNativePlatform?.() || !isNeighborRegistered()) return;
+  const PushNotifications = window.Capacitor?.Plugins?.PushNotifications;
+  if (!PushNotifications) {
+    console.warn("[PUSH] Plugin nativo no disponible; ejecuta npx cap sync.");
+    return;
+  }
+  neighborPushInitialized = true;
+  try {
+    if (window.Capacitor?.getPlatform?.() === "android") {
+      await PushNotifications.createChannel?.({
+        id: "sos_calls",
+        name: "Llamadas SOS",
+        description: "Llamadas seguras de la central municipal",
+        importance: 5,
+        visibility: 1,
+        vibration: true
+      });
+      await PushNotifications.createChannel?.({
+        id: "sos_alerts",
+        name: "Alertas SOS",
+        description: "Actualizaciones importantes de casos municipales",
+        importance: 5,
+        visibility: 1,
+        vibration: true
+      });
+    }
+    await PushNotifications.addListener("registration", (token) => {
+      registerNeighborPushToken(token?.value).catch((error) => console.warn("[PUSH REGISTER]", error.message));
+    });
+    await PushNotifications.addListener("registrationError", (error) => {
+      console.warn("[PUSH REGISTRATION]", error?.error || error?.message || "Error de registro");
+    });
+    await PushNotifications.addListener("pushNotificationReceived", (notification) => {
+      const data = notification?.data || {};
+      if (data.type === "VOICE_INCOMING") statusLabel.textContent = "Llamada segura entrante de la central";
+      handleNeighborPushAction(data).catch(() => null);
+    });
+    await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+      handleNeighborPushAction(action?.notification?.data || {}).catch(() => null);
+    });
+    let permission = await PushNotifications.checkPermissions();
+    if (permission.receive === "prompt") permission = await PushNotifications.requestPermissions();
+    if (permission.receive === "granted") await PushNotifications.register();
+  } catch (error) {
+    neighborPushInitialized = false;
+    console.warn("[PUSH INIT]", error?.message || error);
+  }
+}
+
 async function initializeApp() {
   updateTicketLabels();
 
@@ -3481,6 +3634,7 @@ async function initializeApp() {
   if (isNeighborRegistered()) {
     updateProfileCard();
     await refreshNeighborProfileFromServer();
+    await registerNeighborPushNotifications();
     const recovered = await recoverActiveCase();
 
     if (recovered) {
