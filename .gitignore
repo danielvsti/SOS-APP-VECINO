@@ -10,6 +10,9 @@ www/*
 !www/service-worker.js
 !www/logo.png
 !www/logo.svg
+!www/queltu-brand.css
+!www/queltu-logo.png
+!www/queltu-symbol.png
 !www/icons/
 !www/icons/*.png
 !www/vendor/

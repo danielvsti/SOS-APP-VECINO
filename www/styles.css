@@ -1372,6 +1372,29 @@ body.sensor-gesture-mode *:not(input):not(textarea):not(select) {
   transform: scale(.97);
 }
 
+.neighbor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.top-pnr-button {
+  min-width: 70px;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid #fecaca;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #fff, #fff1f2);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .10);
+  cursor: pointer;
+}
+
+.top-pnr-button:active { transform: scale(.97); }
+
 .status-pill {
   margin-bottom: 14px;
 }
@@ -2638,3 +2661,28 @@ body.voice-call-open {
   0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, .12); }
   50% { transform: scale(1.04); box-shadow: 0 0 0 14px rgba(255, 255, 255, 0); }
 }
+
+.neighbor-pnr {
+  width: min(100%, 660px);
+  margin: 0 auto;
+  padding: 22px;
+  border: 1px solid #cbd5e1;
+  border-radius: 26px;
+  background: linear-gradient(145deg, #ffffff, #f3f7fc);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, .08);
+}
+
+.neighbor-pnr-panel { z-index: 130; }
+.neighbor-pnr-panel .neighbor-pnr { max-height: min(78vh, 720px); overflow-y: auto; text-align: left; }
+
+.neighbor-pnr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.neighbor-pnr-head span:first-child { color: #64748b; font-size: 12px; font-weight: 900; letter-spacing: .12em; }
+.neighbor-pnr-head h2 { margin: 4px 0 0; color: #0f172a; font-size: 24px; }
+.neighbor-pnr-area { padding: 7px 10px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 12px; font-weight: 900; }
+.neighbor-pnr > p { color: #64748b; line-height: 1.45; }
+.neighbor-pnr-list { display: grid; gap: 10px; }
+.neighbor-pnr-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; width: 100%; padding: 14px; border: 1px solid #dbe3ef; border-radius: 17px; background: #fff; color: #0f172a; text-align: left; cursor: pointer; }
+.neighbor-pnr-card strong, .neighbor-pnr-card small { display: block; }
+.neighbor-pnr-card small { margin-top: 4px; color: #64748b; line-height: 1.35; }
+.neighbor-pnr-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 12px; background: #fff1f2; }
+.neighbor-pnr-empty { padding: 16px; border-radius: 14px; background: #f8fafc; color: #64748b; text-align: center; }

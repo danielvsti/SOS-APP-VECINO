@@ -1,5 +1,5 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
-const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
+const API = SOS_CONFIG.API_BASE || "https://api.queltu.com";
 const NEIGHBOR_TOKEN_KEY = "sos_neighbor_session_token";
 const NEIGHBOR_REFRESH_TOKEN_KEY = "sos_neighbor_refresh_token";
 const NEIGHBOR_PUSH_TOKEN_KEY = "sos_neighbor_push_token";
@@ -7,6 +7,19 @@ const NEIGHBOR_SETTINGS_KEY = "sos_neighbor_platform_settings";
 const CURRENT_CASE_OWNER_KEY = "sos_neighbor_current_case_owner";
 const nativeFetch = window.fetch.bind(window);
 let neighborRefreshPromise = null;
+
+async function nativeFetchWithPlatformError(input, options = {}) {
+  try {
+    return await nativeFetch(input, options);
+  } catch (cause) {
+    const url = typeof input === "string" ? input : input?.url || "";
+    if (!String(url).startsWith(API)) throw cause;
+    const error = new Error("No fue posible conectar con la plataforma. Verifica Internet e intenta nuevamente.");
+    error.cause = cause;
+    error.code = "NETWORK_ERROR";
+    throw error;
+  }
+}
 
 async function refreshNeighborAccessToken() {
   const refreshToken = localStorage.getItem(NEIGHBOR_REFRESH_TOKEN_KEY) || "";
@@ -37,17 +50,18 @@ async function refreshNeighborAccessToken() {
 window.fetch = async (input, options = {}) => {
   const url = typeof input === "string" ? input : input?.url || "";
   const token = localStorage.getItem(NEIGHBOR_TOKEN_KEY) || "";
-  if (!token || !String(url).startsWith(API)) return nativeFetch(input, options);
+  if (!String(url).startsWith(API)) return nativeFetch(input, options);
+  if (!token) return nativeFetchWithPlatformError(input, options);
   const headers = new Headers(options.headers || (typeof input !== "string" ? input?.headers : undefined) || {});
   if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
-  let response = await nativeFetch(input, { ...options, headers });
+  let response = await nativeFetchWithPlatformError(input, { ...options, headers });
   const canRefresh = response.status === 401
     && !String(url).includes("/auth/mobile/refresh")
     && Boolean(localStorage.getItem(NEIGHBOR_REFRESH_TOKEN_KEY));
   if (!canRefresh || !(await refreshNeighborAccessToken())) return response;
   const retryHeaders = new Headers(headers);
   retryHeaders.set("Authorization", `Bearer ${localStorage.getItem(NEIGHBOR_TOKEN_KEY) || ""}`);
-  response = await nativeFetch(input, { ...options, headers: retryHeaders });
+  response = await nativeFetchWithPlatformError(input, { ...options, headers: retryHeaders });
   return response;
 };
 const IS_APP_STANDALONE =
@@ -83,6 +97,11 @@ const homePanel = document.getElementById("homePanel");
 const neighborAnnouncementsSection = document.getElementById("neighborAnnouncementsSection");
 const neighborAnnouncementsList = document.getElementById("neighborAnnouncementsList");
 const neighborAnnouncementsUnread = document.getElementById("neighborAnnouncementsUnread");
+const neighborPnrSection = document.getElementById("neighborPnrSection");
+const neighborPnrList = document.getElementById("neighborPnrList");
+const neighborPnrArea = document.getElementById("neighborPnrArea");
+const openPnrButton = document.getElementById("openPnrButton");
+const closePnrButton = document.getElementById("closePnrButton");
 let neighborAnnouncements = [];
 let neighborAnnouncementIndex = 0;
 const resumeFollowupCard = document.getElementById("resumeFollowupCard");
@@ -323,6 +342,20 @@ function applyNeighborEmergencyCategories(settings = neighborPlatformSettings) {
   return true;
 }
 
+function applyNeighborExperience(settings = neighborPlatformSettings) {
+  const subtitle = document.querySelector(".neighbor-app-header .product-subtitle");
+  if (!subtitle) return;
+  if (!isNeighborRegistered() || !settings) {
+    subtitle.textContent = "Protección y respuesta conectada";
+    return;
+  }
+  const terminology = settings.terminology || {};
+  const endUser = terminology.endUser || terminology.end_user || "Usuario";
+  const vertical = String(settings.vertical || "CITY").toUpperCase();
+  const scope = vertical === "CITY" ? "municipal" : vertical === "MINING" ? "operacional minera" : "operacional";
+  subtitle.textContent = `Protección y respuesta ${scope} · ${endUser}`;
+}
+
 async function refreshNeighborPlatformSettings() {
   try {
     const res = await fetch(`${API}/auth/session`, { cache: "no-store" });
@@ -333,10 +366,12 @@ async function refreshNeighborPlatformSettings() {
     neighborPlatformSettings = data.platform_settings;
     localStorage.setItem(NEIGHBOR_SETTINGS_KEY, JSON.stringify(neighborPlatformSettings));
     applyNeighborEmergencyCategories(neighborPlatformSettings);
+    applyNeighborExperience(neighborPlatformSettings);
     return neighborPlatformSettings;
   } catch (error) {
     console.warn("No se pudo actualizar la configuración municipal", error);
     applyNeighborEmergencyCategories(neighborPlatformSettings);
+    applyNeighborExperience(neighborPlatformSettings);
     return neighborPlatformSettings;
   }
 }
@@ -485,6 +520,9 @@ function clearNeighborProfile() {
   localStorage.removeItem("user_id");
   localStorage.removeItem(NEIGHBOR_TOKEN_KEY);
   localStorage.removeItem(NEIGHBOR_REFRESH_TOKEN_KEY);
+  if (openPnrButton) openPnrButton.hidden = true;
+  if (neighborPnrSection) neighborPnrSection.hidden = true;
+  applyNeighborExperience(null);
 }
 
 function resetStatusPollFailures() {
@@ -653,6 +691,7 @@ function showOtpDemoCode(code) {
 }
 
 function showLogin() {
+  applyNeighborExperience(null);
   homePanel.hidden = true;
   categoryPanel.hidden = true;
   activePanel.hidden = true;
@@ -668,6 +707,7 @@ function showLogin() {
 }
 
 function showRegister() {
+  applyNeighborExperience(null);
   homePanel.hidden = true;
   categoryPanel.hidden = true;
   activePanel.hidden = true;
@@ -678,7 +718,7 @@ function showRegister() {
   otpBlock.hidden = true;
   cancelButton.hidden = true;
   resetOtpDemo();
-  statusLabel.textContent = "Registro de vecino";
+  statusLabel.textContent = "Registro de usuario";
   fillRegisterFormFromProfile();
 }
 
@@ -1452,6 +1492,7 @@ function showHome(options = {
   }
 
   updateProfileCard();
+  applyNeighborExperience(neighborPlatformSettings);
   authPanel.hidden = true;
   profilePanel.hidden = true;
   homePanel.hidden = false;
@@ -1464,6 +1505,7 @@ function showHome(options = {
   confirmButton.disabled = !isNeighborAccountAllowed();
   backButton.disabled = false;
   updateResumeFollowupCard();
+  loadNeighborPnr().catch((error) => console.warn("[PNR]", error));
   loadNeighborAnnouncements().catch((error) => console.warn("[ANNOUNCEMENTS]", error));
   if (!isNeighborAccountAllowed()) {
     statusLabel.textContent = "Cuenta no habilitada";
@@ -1472,6 +1514,58 @@ function showHome(options = {
       ? "Tienes un caso activo en seguimiento"
       : "Lista para usar";
   }
+}
+
+async function openPnrDocument(documentId, documentUrl = "") {
+  if (documentUrl) {
+    await openHostedAnnouncementVideo(documentUrl);
+    return;
+  }
+  const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+  try {
+    const response = await fetch(`${API}/mobile/safety/pnr/${encodeURIComponent(documentId)}/content`);
+    if (!response.ok) throw new Error(await response.text() || "No fue posible abrir el PNR");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    if (popup) popup.location.replace(url);
+    else window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (error) {
+    if (popup) popup.close();
+    alert(error.message || "No fue posible abrir el PNR");
+  }
+}
+
+function renderNeighborPnr(data = {}) {
+  if (!neighborPnrSection || !neighborPnrList) return;
+  const documents = Array.isArray(data.documents) ? data.documents : [];
+  const available = data.enabled === true && String(data.vertical || "").toUpperCase() === "MINING";
+  if (openPnrButton) openPnrButton.hidden = !available;
+  if (!available) {
+    neighborPnrSection.hidden = true;
+    return;
+  }
+  if (neighborPnrArea) neighborPnrArea.textContent = data.work_area || "Toda la operación";
+  neighborPnrList.innerHTML = documents.length ? documents.map(document => `
+    <button class="neighbor-pnr-card" type="button" data-pnr-id="${escapeHtml(document.id)}" data-pnr-url="${escapeHtml(document.document_url || "")}">
+      <span class="neighbor-pnr-icon">📄</span>
+      <span><strong>${escapeHtml(document.code)} · ${escapeHtml(document.title)}</strong><small>Versión ${escapeHtml(document.version)}${document.summary ? ` · ${escapeHtml(document.summary)}` : ""}</small></span>
+      <span aria-hidden="true">›</span>
+    </button>`).join("") : '<div class="neighbor-pnr-empty">No hay PNR publicados para tu área.</div>';
+  neighborPnrList.querySelectorAll("[data-pnr-id]").forEach(button => button.addEventListener("click", () => openPnrDocument(button.dataset.pnrId, button.dataset.pnrUrl)));
+}
+
+async function loadNeighborPnr() {
+  if (!isNeighborRegistered() || !neighborPnrSection) return;
+  if (String(neighborPlatformSettings?.vertical || "CITY").toUpperCase() !== "MINING") {
+    neighborPnrSection.hidden = true;
+    if (openPnrButton) openPnrButton.hidden = true;
+    return;
+  }
+  const response = await fetch(`${API}/mobile/safety/pnr`, { cache: "no-store" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status !== "ok") throw new Error(data.message || "No fue posible cargar los PNR");
+  renderNeighborPnr(data);
 }
 
 function announcementHostedVideo(rawUrl) {
@@ -1732,7 +1826,7 @@ async function sendSOS() {
       control_center_code: getNeighborControlCenterCode(),
       alert_type: selectedAlertType,
       title: alertDefinitions[selectedAlertType].title,
-      description: "Alerta enviada desde PWA SOS Municipal",
+      description: "Alerta enviada desde QUELTU Vecino",
       priority: alertDefinitions[selectedAlertType].priority,
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
@@ -3491,6 +3585,9 @@ const editProfileFromSettingsButton = document.getElementById("editProfileFromSe
 const logoutFromSettingsButton = document.getElementById("logoutFromSettingsButton");
 
 appSettingsButton?.addEventListener("click", openAppSettings);
+openPnrButton?.addEventListener("click", () => { neighborPnrSection.hidden = false; });
+closePnrButton?.addEventListener("click", () => { neighborPnrSection.hidden = true; });
+neighborPnrSection?.addEventListener("click", (event) => { if (event.target === neighborPnrSection) neighborPnrSection.hidden = true; });
 closeAppSettingsButton?.addEventListener("click", closeAppSettings);
 editProfileFromSettingsButton?.addEventListener("click", () => { closeAppSettings(); showRegister(); });
 logoutFromSettingsButton?.addEventListener("click", logoutNeighbor);
@@ -3560,6 +3657,7 @@ async function registerNeighborPushToken(pushToken) {
 }
 
 async function handleNeighborPushAction(data = {}) {
+  const nativeCallAction = String(data.native_call_action || "").toUpperCase();
   if (data.event_id) {
     currentEventId = String(data.event_id);
     localStorage.setItem("event_id", currentEventId);
@@ -3576,6 +3674,23 @@ async function handleNeighborPushAction(data = {}) {
     showActiveAlert();
     await refreshStatus();
   }
+  if (nativeCallAction === "ANSWER" && secureVoice.direction === "incoming") {
+    secureVoice.direction = "answered-incoming";
+    await connectSecureVoice();
+  } else if (nativeCallAction === "REJECT" && secureVoice.direction === "incoming") {
+    await cleanupSecureVoice({
+      state: VOICE_CALL_STATES.REJECTED,
+      reason: "REJECTED_BY_NEIGHBOR",
+      notifyBackend: true
+    });
+  }
+}
+
+async function handlePendingNeighborNativeCallAction() {
+  const SafeCall = window.Capacitor?.Plugins?.SafeCall;
+  if (!SafeCall?.getPendingAction) return;
+  const pending = await SafeCall.getPendingAction();
+  if (pending?.native_call_action) await handleNeighborPushAction(pending);
 }
 
 async function registerNeighborPushNotifications() {
@@ -3587,6 +3702,12 @@ async function registerNeighborPushNotifications() {
   }
   neighborPushInitialized = true;
   try {
+    const SafeCall = window.Capacitor?.Plugins?.SafeCall;
+    await SafeCall?.addListener?.("safeCallAction", (data) => {
+      handleNeighborPushAction(data).catch((error) => {
+        console.warn("[SAFE CALL ACTION]", error?.message || error);
+      });
+    });
     if (window.Capacitor?.getPlatform?.() === "android") {
       await PushNotifications.createChannel?.({
         id: "sos_calls",
@@ -3622,6 +3743,7 @@ async function registerNeighborPushNotifications() {
     let permission = await PushNotifications.checkPermissions();
     if (permission.receive === "prompt") permission = await PushNotifications.requestPermissions();
     if (permission.receive === "granted") await PushNotifications.register();
+    await handlePendingNeighborNativeCallAction();
   } catch (error) {
     neighborPushInitialized = false;
     console.warn("[PUSH INIT]", error?.message || error);

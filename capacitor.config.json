@@ -1,11 +1,11 @@
 {
   "appId": "cl.vsti.sosvecino",
-  "appName": "SOS Municipal",
+  "appName": "QUELTU Vecino",
   "webDir": "www",
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 1200,
-      "backgroundColor": "#07111f",
+      "backgroundColor": "#f4f5f8",
       "showSpinner": false
     }
   }

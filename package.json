@@ -1,8 +1,8 @@
 {
   "name": "sos-app-vecino",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "private": true,
-  "description": "App móvil vecino del Sistema SOS Municipal VS&TI",
+  "description": "QUELTU · Protección y respuesta conectada, un producto de VS&TI",
   "scripts": {
     "sync": "npx cap sync",
     "ios": "npx cap open ios",

@@ -22,6 +22,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(SafeCallPlugin.class);
         super.onCreate(savedInstanceState);
 
         Log.d(TAG, "MainActivity onCreate");

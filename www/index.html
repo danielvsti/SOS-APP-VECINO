@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Alerta Comunal</title>
-  <meta name="app-version" content="v28.9-gps-control-center-label">
+  <title>QUELTU</title>
+  <meta name="app-version" content="v29.0-neutral-auth-pnr-header">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=28.9-gps-control-center-label">
-  <meta name="theme-color" content="#dc2626">
+  <link rel="stylesheet" href="styles.css?v=29.0-neutral-auth-pnr-header">
+  <link rel="stylesheet" href="queltu-brand.css?v=20260716">
+  <meta name="theme-color" content="#151A1D">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Alerta Comunal">
+  <meta name="apple-mobile-web-app-title" content="QUELTU">
   <meta name="format-detection" content="telephone=no">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
@@ -41,13 +42,16 @@
   <main class="container">
     <header class="neighbor-app-header">
       <div class="neighbor-brand">
-        <img src="logo.svg" class="logo" alt="Alerta Comunal por VS&TI">
+        <img src="queltu-symbol.png" class="logo" alt="QUELTU">
         <div>
-          <h1>Alerta Comunal</h1>
-          <p class="product-subtitle">Sistema SOS Municipal por VS&TI</p>
+          <h1>QUELTU</h1>
+          <p class="product-subtitle">Protección y respuesta conectada</p>
         </div>
       </div>
-      <button id="appSettingsButton" class="top-settings-button" type="button" aria-label="Abrir configuración">⚙️</button>
+      <div class="neighbor-header-actions">
+        <button id="openPnrButton" class="top-pnr-button" type="button" aria-label="Abrir mis procedimientos, normas y reglas" hidden>Mis PNR</button>
+        <button id="appSettingsButton" class="top-settings-button" type="button" aria-label="Abrir configuración">⚙️</button>
+      </div>
     </header>
 
     <div id="status" class="status-pill">Lista para usar</div>
@@ -73,7 +77,7 @@
         </div>
 
         <div id="registerBlock" hidden>
-          <h2>Registro del vecino</h2>
+          <h2>Registro de usuario</h2>
           <p class="helper-text">
             Regístrate para que la central reciba tu nombre, teléfono, dirección y contactos de emergencia.
           </p>
@@ -97,12 +101,12 @@
             📍 Usar GPS para asignar Centro de Control
           </button>
 
-          <div id="homeLocationStatus" class="small-muted">GPS pendiente para validar zona municipal</div>
+          <div id="homeLocationStatus" class="small-muted">GPS pendiente para validar zona de operación</div>
 
           <div class="contact-subtitle">Contacto de emergencia 1</div>
           <input id="contact1Name" type="text" placeholder="Nombre contacto">
           <input id="contact1Phone" type="tel" placeholder="Teléfono contacto">
-          <input id="contact1Relation" type="text" placeholder="Relación: familiar, vecino, conserje...">
+          <input id="contact1Relation" type="text" placeholder="Relación: familiar, persona cercana, conserje...">
 
           <div class="contact-subtitle">Contacto de emergencia 2</div>
           <input id="contact2Name" type="text" placeholder="Nombre contacto">
@@ -257,6 +261,18 @@
             <p>Usa SOS solo ante emergencias reales. Si fue falsa alarma, cancela desde el seguimiento del caso.</p>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="neighborPnrSection" class="sensor-settings-panel neighbor-pnr-panel" hidden aria-label="Procedimientos, normas y reglas">
+      <div class="sensor-settings-card neighbor-pnr">
+        <div class="sensor-settings-header neighbor-pnr-head">
+          <div><span>SEGURIDAD OPERACIONAL</span><h2>PNR de mi área</h2></div>
+          <button id="closePnrButton" class="icon-button" type="button" aria-label="Cerrar Mis PNR">×</button>
+        </div>
+        <span id="neighborPnrArea" class="neighbor-pnr-area"></span>
+        <p>Procedimientos, normas y reglas vigentes para realizar tu trabajo de forma segura.</p>
+        <div id="neighborPnrList" class="neighbor-pnr-list"></div>
       </div>
     </section>
 

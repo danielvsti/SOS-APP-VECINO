@@ -1,0 +1,22 @@
+:root {
+  --queltu-ink: #151a1d;
+  --queltu-red: #d94742;
+  --queltu-paper: #f4f5f8;
+}
+
+body { background: var(--queltu-paper); color: var(--queltu-ink); }
+.neighbor-app-header { background: rgba(255, 255, 255, .96); border-bottom: 2px solid rgba(217, 71, 66, .18); }
+.neighbor-app-header .logo {
+  width: 58px; height: 58px; box-sizing: border-box; object-fit: contain;
+  padding: 3px; border-radius: 17px; background: #fff; box-shadow: 0 8px 24px rgba(21, 26, 29, .14);
+}
+.neighbor-app-header h1 { color: var(--queltu-ink); letter-spacing: .12em; font-size: 26px; }
+.product-subtitle { color: #61727c; }
+.top-settings-button { background: var(--queltu-ink); border-color: #303941; }
+.sos-button, .primary-action, .accept-call { background: linear-gradient(145deg, #ef4b48, var(--queltu-red)); }
+
+@media (max-width: 420px) {
+  .neighbor-app-header .logo { width: 50px; height: 50px; border-radius: 15px; }
+  .neighbor-app-header h1 { font-size: 22px; }
+  .product-subtitle { font-size: 12px; }
+}
