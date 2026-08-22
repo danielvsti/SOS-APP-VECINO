@@ -616,6 +616,17 @@ body.sensor-gesture-mode *:not(input):not(textarea):not(select) {
   line-height: 1.35;
 }
 
+.followup-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.followup-card #cancelButton:not([hidden]) {
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+}
+
 .neutral-action {
   width: 100%;
   padding: 14px 16px;
@@ -2442,7 +2453,11 @@ body.modal-open {
   }
 }
 
-/* Dock de emergencia: compacto en navegador y persistente en PWA/Capacitor. */
+/* Dock de emergencia: navegación inferior estable para Vecino/Trabajador. */
+:root {
+  --ac-case-dock-height: 56px;
+}
+
 .communication-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   gap: 5px !important;
@@ -2482,81 +2497,61 @@ body.modal-open {
   color: var(--ac-red-dark) !important;
 }
 
-html.app-standalone .container:has(#activePanel:not([hidden])) .communication-grid {
-  position: fixed;
-  z-index: 100;
-  left: 50%;
-  bottom: 0;
-  width: min(100%, 520px) !important;
+/*
+ * El estado se aplica desde JS y no mediante :has(). En WKWebView/iOS, combinar
+ * :has(), left:50% y translate hacía que el dock se reposicionara cuando
+ * cambiaba el viewport visual (scroll, teclado o cierre de un modal).
+ */
+body.active-case-open .communication-grid {
+  position: fixed !important;
+  z-index: 1000;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  max-width: 520px;
   margin: 0 !important;
-  padding: 3px 8px calc(3px + var(--ac-safe-bottom)) !important;
-  transform: translateX(-50%);
+  padding:
+    3px max(8px, env(safe-area-inset-right, 0px))
+    calc(3px + var(--ac-safe-bottom))
+    max(8px, env(safe-area-inset-left, 0px)) !important;
+  transform: none !important;
   border: 0;
   border-top: 1px solid #dbe3ef;
   border-radius: 0;
   background: #fff !important;
   box-shadow: 0 -6px 18px rgba(15, 23, 42, .12);
   isolation: isolate;
+  overscroll-behavior: none;
 }
 
-html.app-standalone .communication-grid .comm-button,
-html.app-standalone .communication-grid .comm-button.wide {
+body.active-case-open .communication-grid .comm-button,
+body.active-case-open .communication-grid .comm-button.wide {
   min-height: 50px !important;
   padding: 3px 2px !important;
   gap: 1px;
   font-size: 20px !important;
 }
 
-html.app-standalone .communication-grid .comm-button span {
+body.active-case-open .communication-grid .comm-button span {
   font-size: 10px !important;
 }
 
-html.app-standalone #cancelButton:not([hidden]) {
-  margin-bottom: calc(62px + var(--ac-safe-bottom));
+/* Reserva el alto del dock para que el final de la ficha nunca quede tapado. */
+body.active-case-open #activePanel {
+  padding-bottom: calc(var(--ac-case-dock-height) + var(--ac-safe-bottom) + 12px);
 }
 
-html.app-standalone .recording-banner {
-  bottom: calc(58px + var(--ac-safe-bottom));
+body.active-case-open .recording-banner {
+  bottom: calc(var(--ac-case-dock-height) + var(--ac-safe-bottom));
 }
 
-/* Safari móvil: el dock conserva el mismo comportamiento fijo que la app instalada. */
-@media (max-width: 520px) {
-  html:not(.app-standalone) .container:has(#activePanel:not([hidden])) .communication-grid {
-    position: fixed;
-    z-index: 100;
-    left: 50%;
-    bottom: 0;
-    width: min(100%, 520px) !important;
-    margin: 0 !important;
-    padding: 3px 8px calc(3px + var(--ac-safe-bottom)) !important;
-    transform: translateX(-50%);
-    border: 0;
-    border-top: 1px solid #dbe3ef;
-    border-radius: 0;
-    background: #fff !important;
-    box-shadow: 0 -6px 18px rgba(15, 23, 42, .12);
-    isolation: isolate;
-  }
-
-  html:not(.app-standalone) .communication-grid .comm-button,
-  html:not(.app-standalone) .communication-grid .comm-button.wide {
-    min-height: 50px !important;
-    padding: 3px 2px !important;
-    gap: 1px;
-    font-size: 20px !important;
-  }
-
-  html:not(.app-standalone) .communication-grid .comm-button span {
-    font-size: 10px !important;
-  }
-
-  html:not(.app-standalone) #cancelButton:not([hidden]) {
-    margin-bottom: calc(62px + var(--ac-safe-bottom));
-  }
-
-  html:not(.app-standalone) .recording-banner {
-    bottom: calc(58px + var(--ac-safe-bottom));
-  }
+/* El teclado y los overlays tienen sus propias acciones; evitamos dos docks. */
+body.active-case-open.active-case-keyboard .communication-grid,
+body.active-case-open.modal-open .communication-grid,
+body.active-case-open.voice-call-open .communication-grid {
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* Llamada de emergencia: overlay contenido, sin alterar el footer ni el layout. */
@@ -2662,27 +2657,342 @@ body.voice-call-open {
   50% { transform: scale(1.04); box-shadow: 0 0 0 14px rgba(255, 255, 255, 0); }
 }
 
-.neighbor-pnr {
-  width: min(100%, 660px);
-  margin: 0 auto;
-  padding: 22px;
-  border: 1px solid #cbd5e1;
-  border-radius: 26px;
-  background: linear-gradient(145deg, #ffffff, #f3f7fc);
-  box-shadow: 0 16px 38px rgba(15, 23, 42, .08);
+.neighbor-pnr-panel {
+  z-index: 2147483640;
+  place-items: center;
+  padding:
+    max(10px, var(--ac-safe-top))
+    10px
+    max(10px, var(--ac-safe-bottom));
+  background: rgba(8, 12, 22, .72);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
-.neighbor-pnr-panel { z-index: 130; }
-.neighbor-pnr-panel .neighbor-pnr { max-height: min(78vh, 720px); overflow-y: auto; text-align: left; }
+.neighbor-pnr {
+  display: flex;
+  width: min(100%, 760px);
+  height: min(920px, calc(100dvh - var(--ac-safe-top) - var(--ac-safe-bottom) - 20px));
+  max-height: none !important;
+  margin: 0 auto;
+  padding: 0;
+  overflow: hidden !important;
+  border: 1px solid rgba(203, 213, 225, .9);
+  border-radius: 30px;
+  background: #f7f9fc;
+  box-shadow: 0 30px 90px rgba(2, 6, 23, .48);
+  text-align: left;
+  flex-direction: column;
+}
 
-.neighbor-pnr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.neighbor-pnr-head span:first-child { color: #64748b; font-size: 12px; font-weight: 900; letter-spacing: .12em; }
-.neighbor-pnr-head h2 { margin: 4px 0 0; color: #0f172a; font-size: 24px; }
-.neighbor-pnr-area { padding: 7px 10px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 12px; font-weight: 900; }
-.neighbor-pnr > p { color: #64748b; line-height: 1.45; }
-.neighbor-pnr-list { display: grid; gap: 10px; }
-.neighbor-pnr-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; width: 100%; padding: 14px; border: 1px solid #dbe3ef; border-radius: 17px; background: #fff; color: #0f172a; text-align: left; cursor: pointer; }
-.neighbor-pnr-card strong, .neighbor-pnr-card small { display: block; }
-.neighbor-pnr-card small { margin-top: 4px; color: #64748b; line-height: 1.35; }
-.neighbor-pnr-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 12px; background: #fff1f2; }
-.neighbor-pnr-empty { padding: 16px; border-radius: 14px; background: #f8fafc; color: #64748b; text-align: center; }
+.neighbor-pnr-head {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 22px 22px 18px;
+  border-bottom: 1px solid #dbe3ef;
+  background: linear-gradient(145deg, #ffffff, #f4f7fb);
+}
+
+.neighbor-pnr-head > div { min-width: 0; }
+.neighbor-pnr-head span:first-child {
+  color: #e23d3b;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .16em;
+}
+.neighbor-pnr-head h2 {
+  margin: 5px 0 0;
+  color: #0f172a;
+  font-size: clamp(25px, 7vw, 34px);
+  line-height: 1;
+}
+.neighbor-pnr-head p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.neighbor-pnr-head .icon-button {
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  flex: 0 0 48px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #eef2f7;
+}
+
+.neighbor-pnr-library {
+  min-height: 0;
+  padding: 18px 20px calc(24px + var(--ac-safe-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.neighbor-pnr-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid #cbdcf7;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #edf5ff, #ffffff);
+}
+.neighbor-pnr-context div { min-width: 0; }
+.neighbor-pnr-context small,
+.neighbor-pnr-context strong { display: block; }
+.neighbor-pnr-context small {
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.neighbor-pnr-context strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.neighbor-pnr-count {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 900;
+}
+.neighbor-pnr-notice {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #fde68a;
+  border-radius: 14px;
+  background: #fffbeb;
+  color: #854d0e;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.neighbor-pnr-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, .35fr);
+  gap: 10px;
+  margin: 16px 0;
+}
+.neighbor-pnr-tools label { min-width: 0; }
+.neighbor-pnr-tools label > span {
+  display: block;
+  margin: 0 0 6px 2px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+.neighbor-pnr-tools input,
+.neighbor-pnr-tools select {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.neighbor-pnr-list {
+  display: grid;
+  gap: 12px;
+}
+.neighbor-pnr-card {
+  width: 100%;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid #d8e1ed;
+  border-left: 5px solid #2563eb;
+  border-radius: 19px;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
+}
+.neighbor-pnr-card-top,
+.neighbor-pnr-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.neighbor-pnr-card > strong {
+  display: block;
+  margin-top: 11px;
+  font-size: 17px;
+  line-height: 1.25;
+}
+.neighbor-pnr-card > p {
+  display: -webkit-box;
+  margin: 9px 0 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.neighbor-pnr-type-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.neighbor-pnr-type-badge.standard { background: #ede9fe; color: #6d28d9; }
+.neighbor-pnr-type-badge.rule { background: #dcfce7; color: #166534; }
+.neighbor-pnr-type-badge.document { background: #e2e8f0; color: #334155; }
+.neighbor-pnr-version {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+.neighbor-pnr-applicability {
+  margin-top: 9px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+.neighbor-pnr-card-bottom {
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid #eef2f7;
+}
+.neighbor-pnr-card-bottom small {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.neighbor-pnr-open,
+.neighbor-pnr-back,
+.neighbor-pnr-external {
+  min-height: 42px;
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 13px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.neighbor-pnr-open {
+  flex: 0 0 auto;
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  color: #fff;
+}
+.neighbor-pnr-empty {
+  display: grid;
+  gap: 5px;
+  padding: 30px 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  background: #fff;
+  color: #64748b;
+  text-align: center;
+}
+.neighbor-pnr-empty strong { color: #0f172a; }
+
+.neighbor-pnr-viewer {
+  display: flex;
+  min-height: 0;
+  padding: 16px 18px calc(18px + var(--ac-safe-bottom));
+  flex: 1;
+  flex-direction: column;
+}
+.neighbor-pnr-viewer[hidden] { display: none !important; }
+.neighbor-pnr-viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.neighbor-pnr-back { background: #e2e8f0; color: #0f172a; }
+.neighbor-pnr-external { background: #dbeafe; color: #1d4ed8; }
+.neighbor-pnr-viewer-copy { padding: 14px 2px 12px; }
+.neighbor-pnr-viewer-copy h3 {
+  margin: 8px 0 4px;
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.25;
+}
+.neighbor-pnr-viewer-copy p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.neighbor-pnr-frame-shell {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 18px;
+  background: #e2e8f0;
+  flex: 1;
+}
+.neighbor-pnr-frame-shell iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.neighbor-pnr-viewer-status {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 800;
+  text-align: center;
+}
+.neighbor-pnr-viewer-status[hidden] { display: none !important; }
+
+@media (max-width: 520px) {
+  .neighbor-pnr-panel {
+    padding: max(6px, var(--ac-safe-top)) 6px max(6px, var(--ac-safe-bottom));
+  }
+  .neighbor-pnr {
+    height: calc(100dvh - var(--ac-safe-top) - var(--ac-safe-bottom) - 12px);
+    border-radius: 25px;
+  }
+  .neighbor-pnr-head { padding: 18px 17px 15px; }
+  .neighbor-pnr-head p { max-width: 245px; font-size: 12px; }
+  .neighbor-pnr-library { padding: 14px 14px calc(20px + var(--ac-safe-bottom)); }
+  .neighbor-pnr-context { align-items: flex-start; flex-direction: column; }
+  .neighbor-pnr-context strong { white-space: normal; }
+  .neighbor-pnr-tools { grid-template-columns: 1fr; }
+  .neighbor-pnr-card { padding: 14px; }
+  .neighbor-pnr-card-bottom { align-items: stretch; flex-direction: column; }
+  .neighbor-pnr-open { width: 100%; }
+  .neighbor-pnr-viewer { padding: 13px 13px calc(14px + var(--ac-safe-bottom)); }
+  .neighbor-pnr-viewer-head button { padding: 0 11px; font-size: 12px; }
+  .neighbor-pnr-frame-shell { min-height: 260px; }
+}

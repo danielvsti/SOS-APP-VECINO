@@ -64,6 +64,199 @@ window.fetch = async (input, options = {}) => {
   response = await nativeFetchWithPlatformError(input, { ...options, headers: retryHeaders });
   return response;
 };
+const SOS_OUTBOX_DB = "queltu-city-offline";
+const SOS_OUTBOX_STORE = "sos-outbox";
+const SOS_OUTBOX_RETENTION_MS = 72 * 60 * 60 * 1000;
+let sosOutboxSyncing = false;
+
+function openSosOutbox() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error("IndexedDB no disponible"));
+    const request = indexedDB.open(SOS_OUTBOX_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(SOS_OUTBOX_STORE)) {
+        const store = db.createObjectStore(SOS_OUTBOX_STORE, { keyPath: "client_request_id" });
+        store.createIndex("created_at", "created_at");
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("No se pudo abrir la cola offline"));
+  });
+}
+
+async function sosOutboxTransaction(mode, callback) {
+  const db = await openSosOutbox();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(SOS_OUTBOX_STORE, mode);
+      const store = transaction.objectStore(SOS_OUTBOX_STORE);
+      let result;
+      try { result = callback(store); } catch (error) { reject(error); return; }
+      transaction.oncomplete = () => resolve(result?.result ?? result);
+      transaction.onerror = () => reject(transaction.error || new Error("Error en cola offline"));
+      transaction.onabort = () => reject(transaction.error || new Error("Operación offline cancelada"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function newSosClientRequestId() {
+  return globalThis.crypto?.randomUUID?.() || `sos-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function minimizedOfflinePayload(payload) {
+  const { name, phone, ...necessary } = payload;
+  return necessary;
+}
+
+async function listQueuedSos() {
+  const items = await sosOutboxTransaction("readonly", (store) => store.getAll());
+  const cutoff = Date.now() - SOS_OUTBOX_RETENTION_MS;
+  const fresh = (Array.isArray(items) ? items : []).filter((item) => Number(item.created_at || 0) >= cutoff);
+  const expired = (Array.isArray(items) ? items : []).filter((item) => Number(item.created_at || 0) < cutoff);
+  await Promise.all(expired.map((item) => sosOutboxTransaction("readwrite", (store) => store.delete(item.client_request_id))));
+  return fresh.sort((left, right) => Number(left.created_at) - Number(right.created_at));
+}
+
+async function queueSosPayload(payload) {
+  const entry = {
+    ...minimizedOfflinePayload(payload),
+    client_request_id: payload.client_request_id || newSosClientRequestId(),
+    created_at: Date.now(),
+    attempts: 0
+  };
+  await sosOutboxTransaction("readwrite", (store) => store.put(entry));
+  await refreshOfflineOutboxIndicator();
+  return entry;
+}
+
+async function deleteQueuedSos(clientRequestId) {
+  await sosOutboxTransaction("readwrite", (store) => store.delete(clientRequestId));
+}
+
+async function hasQueuedSos() {
+  try { return (await listQueuedSos()).length > 0; } catch (_) { return false; }
+}
+
+function ensureConnectivityBanner() {
+  let banner = document.getElementById("connectivityBanner");
+  if (banner) return banner;
+  banner = document.createElement("div");
+  banner.id = "connectivityBanner";
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  banner.style.cssText = "position:sticky;top:0;z-index:3200;display:none;padding:10px 16px;text-align:center;font-weight:800;background:#fef3c7;color:#78350f;box-shadow:0 4px 16px rgba(15,23,42,.12)";
+  document.body.prepend(banner);
+  return banner;
+}
+
+async function refreshOfflineOutboxIndicator() {
+  const banner = ensureConnectivityBanner();
+  let pending = [];
+  try { pending = await listQueuedSos(); } catch (error) { console.warn("[OFFLINE] cola no disponible", error); }
+  if (!navigator.onLine || pending.length) {
+    banner.style.display = "block";
+    banner.textContent = pending.length
+      ? `${pending.length} alerta${pending.length === 1 ? "" : "s"} pendiente${pending.length === 1 ? "" : "s"} de sincronizar · no cierres la App`
+      : "Sin conexión de datos · puedes preparar una alerta y se enviará al recuperar cobertura";
+  } else {
+    banner.style.display = "none";
+    banner.textContent = "";
+  }
+}
+
+async function sendSosNetwork(payload) {
+  const response = await fetch(`${API}/public/mobile/sos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status === "error") {
+    const error = new Error(data.message || `Error HTTP ${response.status}`);
+    error.httpStatus = response.status;
+    error.responseData = data;
+    throw error;
+  }
+  return data;
+}
+
+async function deliverOrQueueSos(payload) {
+  const deliveryPayload = {
+    ...payload,
+    client_request_id: payload.client_request_id || newSosClientRequestId()
+  };
+  if (!navigator.onLine) {
+    await queueSosPayload(deliveryPayload);
+    return { queued: true, payload: deliveryPayload };
+  }
+  try {
+    return { queued: false, payload: deliveryPayload, data: await sendSosNetwork(deliveryPayload) };
+  } catch (error) {
+    if (error.httpStatus && error.httpStatus < 500 && error.httpStatus !== 429) throw error;
+    await queueSosPayload(deliveryPayload);
+    return { queued: true, payload: deliveryPayload, error };
+  }
+}
+
+function renderQueuedSos(silent = false) {
+  gpsStatus.textContent = "GUARDADO";
+  statusLabel.textContent = silent ? "Solicitud guardada para sincronizar" : "Alerta guardada · esperando cobertura";
+  if (categoryFeedback) {
+    categoryFeedback.hidden = false;
+    categoryFeedback.dataset.tone = "progress";
+    categoryFeedback.textContent = "La alerta quedó guardada de forma segura en este dispositivo. Se enviará automáticamente al recuperar Internet; aún no ha sido recibida por la central.";
+  }
+}
+
+function applySosDelivery(data, alertType) {
+  resetSecureVoiceState();
+  currentEventId = data.event_id;
+  currentTicketId = data.ticket_id || null;
+  localStorage.setItem("event_id", currentEventId);
+  localStorage.setItem(CURRENT_CASE_OWNER_KEY, String(userId));
+  setCurrentAlertType(alertType || selectedAlertType);
+  if (currentTicketId) localStorage.setItem("ticket_id", currentTicketId);
+  eventIdLabel.textContent = currentEventId;
+  eventStatus.textContent = "ACTIVO";
+  updateTicketLabels();
+  resetCaseProgress();
+  renderLinkedIncidentProgress(data);
+}
+
+async function syncQueuedSos() {
+  if (sosOutboxSyncing || !navigator.onLine || !localStorage.getItem(NEIGHBOR_TOKEN_KEY)) return;
+  sosOutboxSyncing = true;
+  try {
+    const pending = await listQueuedSos();
+    for (const entry of pending) {
+      try {
+        const data = await sendSosNetwork(entry);
+        await deleteQueuedSos(entry.client_request_id);
+        if (!currentEventId) {
+          applySosDelivery(data, entry.alert_type);
+          setFollowupMinimized(false);
+          showActiveAlert();
+          statusLabel.textContent = data.idempotent_replay
+            ? "Alerta reconciliada sin duplicados"
+            : "Alerta sincronizada y recibida por la central";
+        }
+      } catch (error) {
+        if (error.httpStatus && error.httpStatus >= 400 && error.httpStatus < 500 && error.httpStatus !== 429) {
+          await deleteQueuedSos(entry.client_request_id);
+          console.warn("[OFFLINE] alerta descartada por respuesta definitiva", error.message);
+        } else {
+          break;
+        }
+      }
+    }
+  } finally {
+    sosOutboxSyncing = false;
+    await refreshOfflineOutboxIndicator();
+  }
+}
 const IS_APP_STANDALONE =
   window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
   window.navigator.standalone === true ||
@@ -100,8 +293,24 @@ const neighborAnnouncementsUnread = document.getElementById("neighborAnnouncemen
 const neighborPnrSection = document.getElementById("neighborPnrSection");
 const neighborPnrList = document.getElementById("neighborPnrList");
 const neighborPnrArea = document.getElementById("neighborPnrArea");
+const neighborPnrLibrary = document.getElementById("neighborPnrLibrary");
+const neighborPnrCount = document.getElementById("neighborPnrCount");
+const neighborPnrAreaNotice = document.getElementById("neighborPnrAreaNotice");
+const neighborPnrSearch = document.getElementById("neighborPnrSearch");
+const neighborPnrTypeFilter = document.getElementById("neighborPnrTypeFilter");
+const neighborPnrViewer = document.getElementById("neighborPnrViewer");
+const neighborPnrBackButton = document.getElementById("neighborPnrBackButton");
+const neighborPnrExternalButton = document.getElementById("neighborPnrExternalButton");
+const neighborPnrViewerType = document.getElementById("neighborPnrViewerType");
+const neighborPnrViewerTitle = document.getElementById("neighborPnrViewerTitle");
+const neighborPnrViewerMeta = document.getElementById("neighborPnrViewerMeta");
+const neighborPnrViewerStatus = document.getElementById("neighborPnrViewerStatus");
+const neighborPnrFrame = document.getElementById("neighborPnrFrame");
 const openPnrButton = document.getElementById("openPnrButton");
 const closePnrButton = document.getElementById("closePnrButton");
+let neighborPnrDocuments = [];
+let neighborPnrObjectUrl = "";
+let neighborPnrExternalUrl = "";
 let neighborAnnouncements = [];
 let neighborAnnouncementIndex = 0;
 const resumeFollowupCard = document.getElementById("resumeFollowupCard");
@@ -121,6 +330,44 @@ const incomingCallPanel = document.getElementById("incomingCallPanel");
 const incomingCallIcon = document.getElementById("incomingCallIcon");
 const incomingCallTitle = document.getElementById("incomingCallTitle");
 const incomingCallText = document.getElementById("incomingCallText");
+
+function syncActiveCaseDockState() {
+  const activeCaseOpen = Boolean(activePanel && !activePanel.hidden);
+  document.body.classList.toggle("active-case-open", activeCaseOpen);
+  if (!activeCaseOpen) {
+    document.body.classList.remove("active-case-keyboard");
+  }
+}
+
+function isTextEntryControl(element) {
+  return element instanceof HTMLElement
+    && element.matches("input, textarea, select, [contenteditable='true']");
+}
+
+function syncActiveCaseKeyboardState() {
+  const focusedEntry = isTextEntryControl(document.activeElement);
+  const visualViewportContracted = Boolean(
+    window.visualViewport
+    && window.innerHeight - window.visualViewport.height > 120
+  );
+  const keyboardOpen = document.body.classList.contains("active-case-open")
+    && focusedEntry
+    && (IS_NATIVE_IOS || visualViewportContracted);
+  document.body.classList.toggle("active-case-keyboard", keyboardOpen);
+}
+
+if (activePanel) {
+  new MutationObserver(syncActiveCaseDockState).observe(activePanel, {
+    attributes: true,
+    attributeFilter: ["hidden"]
+  });
+}
+syncActiveCaseDockState();
+document.addEventListener("focusin", syncActiveCaseKeyboardState);
+document.addEventListener("focusout", () => {
+  window.setTimeout(syncActiveCaseKeyboardState, 180);
+});
+window.visualViewport?.addEventListener("resize", syncActiveCaseKeyboardState);
 
 const authPanel = document.getElementById("authPanel");
 const loginBlock = document.getElementById("loginBlock");
@@ -522,6 +769,8 @@ function clearNeighborProfile() {
   localStorage.removeItem(NEIGHBOR_REFRESH_TOKEN_KEY);
   if (openPnrButton) openPnrButton.hidden = true;
   if (neighborPnrSection) neighborPnrSection.hidden = true;
+  neighborPnrDocuments = [];
+  showPnrLibrary();
   applyNeighborExperience(null);
 }
 
@@ -1516,24 +1765,106 @@ function showHome(options = {
   }
 }
 
-async function openPnrDocument(documentId, documentUrl = "") {
-  if (documentUrl) {
-    await openHostedAnnouncementVideo(documentUrl);
-    return;
+const PNR_TYPE_LABELS = {
+  PROCEDURE: { short: "P", label: "Procedimiento", className: "procedure" },
+  STANDARD: { short: "N", label: "Norma", className: "standard" },
+  RULE: { short: "R", label: "Regla", className: "rule" }
+};
+
+function pnrTypeMeta(value) {
+  return PNR_TYPE_LABELS[String(value || "").toUpperCase()] || { short: "PNR", label: "Documento PNR", className: "document" };
+}
+
+function pnrDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("es-CL");
+}
+
+function resetPnrViewer() {
+  if (neighborPnrObjectUrl) URL.revokeObjectURL(neighborPnrObjectUrl);
+  neighborPnrObjectUrl = "";
+  neighborPnrExternalUrl = "";
+  if (neighborPnrFrame) neighborPnrFrame.removeAttribute("src");
+  if (neighborPnrViewerStatus) {
+    neighborPnrViewerStatus.hidden = false;
+    neighborPnrViewerStatus.textContent = "Preparando documento…";
   }
-  const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+}
+
+function showPnrLibrary() {
+  resetPnrViewer();
+  if (neighborPnrViewer) neighborPnrViewer.hidden = true;
+  if (neighborPnrLibrary) neighborPnrLibrary.hidden = false;
+}
+
+async function openPnrDocument(item) {
+  if (!item || !neighborPnrViewer || !neighborPnrLibrary) return;
+  resetPnrViewer();
+  const type = pnrTypeMeta(item.document_type);
+  neighborPnrLibrary.hidden = true;
+  neighborPnrViewer.hidden = false;
+  neighborPnrViewerType.textContent = `${type.short} · ${type.label}`;
+  neighborPnrViewerType.className = `neighbor-pnr-type-badge ${type.className}`;
+  neighborPnrViewerTitle.textContent = `${item.code || "PNR"} · ${item.title || "Documento"}`;
+  neighborPnrViewerMeta.textContent = [
+    `Versión ${item.version || "1.0"}`,
+    item.work_area || "Toda la operación",
+    pnrDate(item.effective_from) ? `Vigente desde ${pnrDate(item.effective_from)}` : ""
+  ].filter(Boolean).join(" · ");
+
   try {
-    const response = await fetch(`${API}/mobile/safety/pnr/${encodeURIComponent(documentId)}/content`);
-    if (!response.ok) throw new Error(await response.text() || "No fue posible abrir el PNR");
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    if (popup) popup.location.replace(url);
-    else window.location.href = url;
-    setTimeout(() => URL.revokeObjectURL(url), 120000);
+    neighborPnrFrame.onload = () => { neighborPnrViewerStatus.hidden = true; };
+    if (item.document_url) {
+      neighborPnrExternalUrl = item.document_url;
+      neighborPnrFrame.src = item.document_url;
+    } else {
+      const response = await fetch(`${API}/mobile/safety/pnr/${encodeURIComponent(item.id)}/content`);
+      if (!response.ok) throw new Error(await response.text() || "No fue posible abrir el PNR");
+      neighborPnrObjectUrl = URL.createObjectURL(await response.blob());
+      neighborPnrExternalUrl = neighborPnrObjectUrl;
+      neighborPnrFrame.src = neighborPnrObjectUrl;
+    }
   } catch (error) {
-    if (popup) popup.close();
-    alert(error.message || "No fue posible abrir el PNR");
+    neighborPnrViewerStatus.hidden = false;
+    neighborPnrViewerStatus.textContent = error.message || "No fue posible abrir el documento";
   }
+}
+
+function renderNeighborPnrList() {
+  if (!neighborPnrList) return;
+  const search = String(neighborPnrSearch?.value || "").trim().toLocaleLowerCase("es");
+  const typeFilter = String(neighborPnrTypeFilter?.value || "ALL").toUpperCase();
+  const documents = neighborPnrDocuments.filter((item) => {
+    if (typeFilter !== "ALL" && String(item.document_type || "").toUpperCase() !== typeFilter) return false;
+    if (!search) return true;
+    return [item.code, item.title, item.summary, item.work_area, pnrTypeMeta(item.document_type).label]
+      .some((value) => String(value || "").toLocaleLowerCase("es").includes(search));
+  });
+
+  if (neighborPnrCount) neighborPnrCount.textContent = `${documents.length} ${documents.length === 1 ? "documento" : "documentos"}`;
+  neighborPnrList.innerHTML = documents.length ? documents.map((item) => {
+    const type = pnrTypeMeta(item.document_type);
+    const applicability = item.work_area ? item.work_area : "Toda la operación";
+    return `
+      <article class="neighbor-pnr-card">
+        <div class="neighbor-pnr-card-top">
+          <span class="neighbor-pnr-type-badge ${type.className}">${type.short} · ${escapeHtml(type.label)}</span>
+          <span class="neighbor-pnr-version">v${escapeHtml(item.version || "1.0")}</span>
+        </div>
+        <strong>${escapeHtml(item.code || "PNR")} · ${escapeHtml(item.title || "Documento")}</strong>
+        <div class="neighbor-pnr-applicability">📍 ${escapeHtml(applicability)}</div>
+        ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ""}
+        <div class="neighbor-pnr-card-bottom">
+          <small>${pnrDate(item.effective_from) ? `Vigente desde ${escapeHtml(pnrDate(item.effective_from))}` : "Documento vigente"}</small>
+          <button type="button" class="neighbor-pnr-open" data-pnr-id="${escapeHtml(item.id)}">Ver documento</button>
+        </div>
+      </article>`;
+  }).join("") : '<div class="neighbor-pnr-empty"><strong>Sin resultados</strong><span>No hay documentos que coincidan con estos filtros.</span></div>';
+
+  neighborPnrList.querySelectorAll("[data-pnr-id]").forEach((button) => {
+    button.addEventListener("click", () => openPnrDocument(neighborPnrDocuments.find((item) => String(item.id) === button.dataset.pnrId)));
+  });
 }
 
 function renderNeighborPnr(data = {}) {
@@ -1545,14 +1876,18 @@ function renderNeighborPnr(data = {}) {
     neighborPnrSection.hidden = true;
     return;
   }
-  if (neighborPnrArea) neighborPnrArea.textContent = data.work_area || "Toda la operación";
-  neighborPnrList.innerHTML = documents.length ? documents.map(document => `
-    <button class="neighbor-pnr-card" type="button" data-pnr-id="${escapeHtml(document.id)}" data-pnr-url="${escapeHtml(document.document_url || "")}">
-      <span class="neighbor-pnr-icon">📄</span>
-      <span><strong>${escapeHtml(document.code)} · ${escapeHtml(document.title)}</strong><small>Versión ${escapeHtml(document.version)}${document.summary ? ` · ${escapeHtml(document.summary)}` : ""}</small></span>
-      <span aria-hidden="true">›</span>
-    </button>`).join("") : '<div class="neighbor-pnr-empty">No hay PNR publicados para tu área.</div>';
-  neighborPnrList.querySelectorAll("[data-pnr-id]").forEach(button => button.addEventListener("click", () => openPnrDocument(button.dataset.pnrId, button.dataset.pnrUrl)));
+  neighborPnrDocuments = documents;
+  const workArea = String(data.work_area || "").trim();
+  if (neighborPnrArea) neighborPnrArea.textContent = workArea || "Área sin asignar";
+  if (neighborPnrAreaNotice) {
+    neighborPnrAreaNotice.hidden = Boolean(workArea);
+    neighborPnrAreaNotice.textContent = workArea
+      ? ""
+      : "Tu perfil todavía no tiene un área de trabajo asignada. Por ahora verás únicamente los PNR aplicables a toda la operación.";
+  }
+  if (neighborPnrSearch) neighborPnrSearch.value = "";
+  if (neighborPnrTypeFilter) neighborPnrTypeFilter.value = "ALL";
+  renderNeighborPnrList();
 }
 
 async function loadNeighborPnr() {
@@ -1700,9 +2035,10 @@ async function loadNeighborAnnouncements() {
 async function showCategories() {
   if (!(await ensureNeighborCanUseSOS())) return;
 
-  if (currentEventId) {
-    statusLabel.textContent = "Ya existe una alerta activa";
-    showActiveAlert();
+  if (currentEventId || await hasQueuedSos()) {
+    statusLabel.textContent = currentEventId ? "Ya existe una alerta activa" : "Ya existe una alerta esperando sincronización";
+    if (currentEventId) showActiveAlert();
+    await refreshOfflineOutboxIndicator();
     return;
   }
 
@@ -1836,42 +2172,21 @@ async function sendSOS() {
 
     accuracyLabel.textContent = payload.accuracy + " m";
 
-    const res = await fetch(`${API}/public/mobile/sos`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await res.json();
-
-    if (!res.ok || data.status === "error") {
-      throw new Error(data.message || ("Error HTTP " + res.status));
+    const delivery = await deliverOrQueueSos(payload);
+    if (delivery.queued) {
+      renderQueuedSos(false);
+      return;
     }
-
-    resetSecureVoiceState();
-    currentEventId = data.event_id;
-    currentTicketId = data.ticket_id || null;
-
-    localStorage.setItem("event_id", currentEventId);
-    localStorage.setItem(CURRENT_CASE_OWNER_KEY, String(userId));
-    setCurrentAlertType(selectedAlertType);
+    const data = delivery.data;
+    applySosDelivery(data, selectedAlertType);
     setFollowupMinimized(false);
-    if (currentTicketId) {
-      localStorage.setItem("ticket_id", currentTicketId);
-    }
-
-    eventIdLabel.textContent = currentEventId;
-    eventStatus.textContent = "ACTIVO";
     const linkedText = linkedIncidentStatusText(data);
     statusLabel.textContent = linkedText || (currentTicketId
       ? `Alerta enviada · ${shortTicketId(currentTicketId)}`
       : "Alerta enviada");
 
     showActiveAlert();
-    resetCaseProgress();
-    renderLinkedIncidentProgress(data);
+    await refreshOfflineOutboxIndicator();
   } catch (error) {
     console.error(error);
     gpsStatus.textContent = "ERROR";
@@ -1892,9 +2207,9 @@ async function sendSOS() {
 async function sendMobileSOSPayload({ alert_type, title, priority = 1, description, source = "mobile_pwa", sensor_event_type = null, silent = false, confidence = null }) {
   if (!(await ensureNeighborCanUseSOS())) return false;
 
-  if (currentEventId) {
-    statusLabel.textContent = silent ? "Solicitud recibida" : "Ya existe una alerta activa";
-    if (!silent) showActiveAlert();
+  if (currentEventId || await hasQueuedSos()) {
+    statusLabel.textContent = silent ? "Solicitud ya registrada" : (currentEventId ? "Ya existe una alerta activa" : "Ya existe una alerta esperando sincronización");
+    if (!silent && currentEventId) showActiveAlert();
     return false;
   }
 
@@ -1925,30 +2240,13 @@ async function sendMobileSOSPayload({ alert_type, title, priority = 1, descripti
       silent
     };
 
-    const res = await fetch(`${API}/public/mobile/sos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await res.json();
-
-    if (!res.ok || data.status === "error") {
-      throw new Error(data.message || ("Error HTTP " + res.status));
+    const delivery = await deliverOrQueueSos(payload);
+    if (delivery.queued) {
+      renderQueuedSos(silent);
+      return true;
     }
-
-    resetSecureVoiceState();
-    currentEventId = data.event_id;
-    currentTicketId = data.ticket_id || null;
-    localStorage.setItem("event_id", currentEventId);
-    localStorage.setItem(CURRENT_CASE_OWNER_KEY, String(userId));
-    if (currentTicketId) localStorage.setItem("ticket_id", currentTicketId);
-
-    eventIdLabel.textContent = currentEventId;
-    eventStatus.textContent = "ACTIVO";
-    updateTicketLabels();
-    resetCaseProgress();
-    renderLinkedIncidentProgress(data);
+    const data = delivery.data;
+    applySosDelivery(data, alert_type);
 
     if (silent) {
       setFollowupMinimized(true);
@@ -3585,9 +3883,26 @@ const editProfileFromSettingsButton = document.getElementById("editProfileFromSe
 const logoutFromSettingsButton = document.getElementById("logoutFromSettingsButton");
 
 appSettingsButton?.addEventListener("click", openAppSettings);
-openPnrButton?.addEventListener("click", () => { neighborPnrSection.hidden = false; });
-closePnrButton?.addEventListener("click", () => { neighborPnrSection.hidden = true; });
-neighborPnrSection?.addEventListener("click", (event) => { if (event.target === neighborPnrSection) neighborPnrSection.hidden = true; });
+openPnrButton?.addEventListener("click", () => {
+  showPnrLibrary();
+  neighborPnrSection.hidden = false;
+});
+closePnrButton?.addEventListener("click", () => {
+  neighborPnrSection.hidden = true;
+  showPnrLibrary();
+});
+neighborPnrSection?.addEventListener("click", (event) => {
+  if (event.target === neighborPnrSection) {
+    neighborPnrSection.hidden = true;
+    showPnrLibrary();
+  }
+});
+neighborPnrSearch?.addEventListener("input", renderNeighborPnrList);
+neighborPnrTypeFilter?.addEventListener("change", renderNeighborPnrList);
+neighborPnrBackButton?.addEventListener("click", showPnrLibrary);
+neighborPnrExternalButton?.addEventListener("click", () => {
+  if (neighborPnrExternalUrl) window.open(neighborPnrExternalUrl, "_blank", "noopener,noreferrer");
+});
 closeAppSettingsButton?.addEventListener("click", closeAppSettings);
 editProfileFromSettingsButton?.addEventListener("click", () => { closeAppSettings(); showRegister(); });
 logoutFromSettingsButton?.addEventListener("click", logoutNeighbor);
@@ -3628,6 +3943,13 @@ setInterval(() => {
     refreshNeighborProfileFromServer();
   }
 }, 30000);
+
+window.addEventListener("online", () => {
+  void refreshOfflineOutboxIndicator();
+  void syncQueuedSos();
+});
+window.addEventListener("offline", () => void refreshOfflineOutboxIndicator());
+setInterval(() => void syncQueuedSos(), 15000);
 
 let neighborPushInitialized = false;
 
@@ -3752,6 +4074,7 @@ async function registerNeighborPushNotifications() {
 
 async function initializeApp() {
   updateTicketLabels();
+  await refreshOfflineOutboxIndicator();
 
   const storedCaseOwner = localStorage.getItem(CURRENT_CASE_OWNER_KEY);
   if (currentEventId && storedCaseOwner && String(storedCaseOwner) !== String(userId || "")) {
@@ -3780,6 +4103,7 @@ async function initializeApp() {
     updateProfileCard();
     await refreshNeighborProfileFromServer();
     await registerNeighborPushNotifications();
+    await syncQueuedSos();
     const recovered = await recoverActiveCase();
 
     if (recovered) {

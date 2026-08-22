@@ -6,7 +6,7 @@
   <title>QUELTU</title>
   <meta name="app-version" content="v29.0-neutral-auth-pnr-header">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="styles.css?v=29.0-neutral-auth-pnr-header">
+  <link rel="stylesheet" href="styles.css?v=29.2-cancel-action-order">
   <link rel="stylesheet" href="queltu-brand.css?v=20260716">
   <meta name="theme-color" content="#151A1D">
   <meta name="mobile-web-app-capable" content="yes">
@@ -264,15 +264,61 @@
       </div>
     </section>
 
-    <section id="neighborPnrSection" class="sensor-settings-panel neighbor-pnr-panel" hidden aria-label="Procedimientos, normas y reglas">
+    <section id="neighborPnrSection" class="sensor-settings-panel neighbor-pnr-panel" hidden aria-label="Biblioteca de procedimientos, normas y reglas">
       <div class="sensor-settings-card neighbor-pnr">
         <div class="sensor-settings-header neighbor-pnr-head">
-          <div><span>SEGURIDAD OPERACIONAL</span><h2>PNR de mi área</h2></div>
-          <button id="closePnrButton" class="icon-button" type="button" aria-label="Cerrar Mis PNR">×</button>
+          <div>
+            <span>SEGURIDAD OPERACIONAL</span>
+            <h2>Biblioteca PNR</h2>
+            <p>Documentos vigentes para trabajar de forma segura.</p>
+          </div>
+          <button id="closePnrButton" class="icon-button" type="button" aria-label="Cerrar biblioteca PNR">×</button>
         </div>
-        <span id="neighborPnrArea" class="neighbor-pnr-area"></span>
-        <p>Procedimientos, normas y reglas vigentes para realizar tu trabajo de forma segura.</p>
-        <div id="neighborPnrList" class="neighbor-pnr-list"></div>
+
+        <div id="neighborPnrLibrary" class="neighbor-pnr-library">
+          <div class="neighbor-pnr-context">
+            <div>
+              <small>MI ÁREA DE TRABAJO</small>
+              <strong id="neighborPnrArea">—</strong>
+            </div>
+            <span id="neighborPnrCount" class="neighbor-pnr-count">0 documentos</span>
+          </div>
+          <p id="neighborPnrAreaNotice" class="neighbor-pnr-notice" hidden></p>
+
+          <div class="neighbor-pnr-tools" aria-label="Filtros de la biblioteca">
+            <label class="neighbor-pnr-search">
+              <span>Buscar</span>
+              <input id="neighborPnrSearch" type="search" placeholder="Código, título o palabra clave" autocomplete="off">
+            </label>
+            <label class="neighbor-pnr-type-filter">
+              <span>Tipo</span>
+              <select id="neighborPnrTypeFilter">
+                <option value="ALL">Todos</option>
+                <option value="PROCEDURE">Procedimientos</option>
+                <option value="STANDARD">Normas</option>
+                <option value="RULE">Reglas</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="neighborPnrList" class="neighbor-pnr-list" aria-live="polite"></div>
+        </div>
+
+        <div id="neighborPnrViewer" class="neighbor-pnr-viewer" hidden>
+          <div class="neighbor-pnr-viewer-head">
+            <button id="neighborPnrBackButton" class="neighbor-pnr-back" type="button">← Biblioteca</button>
+            <button id="neighborPnrExternalButton" class="neighbor-pnr-external" type="button">Abrir aparte</button>
+          </div>
+          <div class="neighbor-pnr-viewer-copy">
+            <span id="neighborPnrViewerType" class="neighbor-pnr-type-badge">PNR</span>
+            <h3 id="neighborPnrViewerTitle">Documento PNR</h3>
+            <p id="neighborPnrViewerMeta"></p>
+          </div>
+          <div class="neighbor-pnr-frame-shell">
+            <div id="neighborPnrViewerStatus" class="neighbor-pnr-viewer-status">Preparando documento…</div>
+            <iframe id="neighborPnrFrame" title="Documento PNR" loading="eager"></iframe>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -470,9 +516,14 @@
       <div class="followup-card">
         <strong>¿Ya informaste lo necesario?</strong>
         <p>Puede volver al inicio sin cancelar la emergencia. La central y el resolutor seguirán gestionando el caso.</p>
-        <button id="leaveFollowupButton" class="neutral-action" type="button">
-          Volver al inicio sin cancelar
-        </button>
+        <div class="followup-actions">
+          <button id="leaveFollowupButton" class="neutral-action" type="button">
+            Volver al inicio sin cancelar
+          </button>
+          <button id="cancelButton" class="danger-secondary" type="button" hidden>
+            Cancelar / falsa alarma
+          </button>
+        </div>
       </div>
 
       <div id="textPanel" class="message-modal" hidden role="dialog" aria-modal="true" aria-labelledby="textPanelTitle">
@@ -509,10 +560,6 @@
       <input id="videoInput" type="file" accept="video/*" capture="environment" hidden>
     </section>
 
-    <button id="cancelButton" class="danger-secondary" type="button" hidden>
-      Cancelar / falsa alarma
-    </button>
-
     <section class="info qa-hidden-technical-info" aria-label="Información de alerta">
       <div>GPS: <span id="gpsStatus">pendiente</span></div>
       <div>Precisión: <span id="accuracy">-</span></div>
@@ -521,6 +568,6 @@
       <div>Evento: <span id="eventId">-</span></div>
     </section>
   </main>
-  <script src="app.js?v=29-dynamic-emergency-categories"></script>
+  <script src="app.js?v=29.2-cancel-action-order"></script>
 </body>
 </html>

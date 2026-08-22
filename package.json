@@ -1,6 +1,6 @@
 {
   "name": "sos-app-vecino",
-  "version": "0.26.1",
+  "version": "0.26.4",
   "private": true,
   "description": "QUELTU · Protección y respuesta conectada, un producto de VS&TI",
   "scripts": {
