@@ -120,6 +120,12 @@ async function listQueuedSos() {
   return fresh.sort((left, right) => Number(left.created_at) - Number(right.created_at));
 }
 
+async function listQueuedSosForCurrentUser() {
+  const ownerId = String(userId || "");
+  if (!ownerId) return [];
+  return (await listQueuedSos()).filter((item) => String(item.user_id || "") === ownerId);
+}
+
 async function queueSosPayload(payload) {
   const entry = {
     ...minimizedOfflinePayload(payload),
@@ -137,7 +143,7 @@ async function deleteQueuedSos(clientRequestId) {
 }
 
 async function hasQueuedSos() {
-  try { return (await listQueuedSos()).length > 0; } catch (_) { return false; }
+  try { return (await listQueuedSosForCurrentUser()).length > 0; } catch (_) { return false; }
 }
 
 function ensureConnectivityBanner() {
@@ -155,7 +161,7 @@ function ensureConnectivityBanner() {
 async function refreshOfflineOutboxIndicator() {
   const banner = ensureConnectivityBanner();
   let pending = [];
-  try { pending = await listQueuedSos(); } catch (error) { console.warn("[OFFLINE] cola no disponible", error); }
+  try { pending = await listQueuedSosForCurrentUser(); } catch (error) { console.warn("[OFFLINE] cola no disponible", error); }
   if (!navigator.onLine || pending.length) {
     banner.style.display = "block";
     banner.textContent = pending.length
@@ -230,7 +236,7 @@ async function syncQueuedSos() {
   if (sosOutboxSyncing || !navigator.onLine || !localStorage.getItem(NEIGHBOR_TOKEN_KEY)) return;
   sosOutboxSyncing = true;
   try {
-    const pending = await listQueuedSos();
+    const pending = await listQueuedSosForCurrentUser();
     for (const entry of pending) {
       try {
         const data = await sendSosNetwork(entry);
